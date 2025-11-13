@@ -1,0 +1,66 @@
+{
+  "ui": {
+    "stamina": "体力",
+    "stamina_label": "体力值",
+    "mana": "魔力",
+    "mana_label": "魔力值",
+    "routes": "路线进度",
+    "bribe": "贿赂",
+    "bribe_full": "贿路与交易",
+    "sabotage": "破坏",
+    "sabotage_full": "破坏监狱设施",
+    "legal": "法学",
+    "legal_full": "法学与文书",
+    "inventory": "背包",
+    "items": "道具",
+    "clues": "线索",
+    "clues_button": "真相线索",
+    "make_choice": "【 进行选择 】",
+    "day": "第 {day} 天",
+    "max_days": "共 {max_days} 天",
+    "continue": "继续",
+    "choice_result": "【 选择结果 】",
+    "attribute_change": "【 属性变化 】",
+    "properties": "【 属性 】",
+    "narrative": "【 场景叙述 】",
+    "choose_action": "【 选择行动 】"
+  },
+  "level1": {
+    "title": "第一关：囚室的黎明",
+    "scene": "清晨的薄光透过狭小的窗口洒入牢房。你在这个肮脏逼仄的地方已经待了三天。冷硬的床板上没有垫子，厕所就在角落里。三天来，你一直在思考如何逃脱这个地狱般的地方。\n\n距离行刑台还有15天。\n\n你听到了走廊里传来的脚步声——可能是早班的狱卒换班了。这是一个机会。你需要做出决定。",
+    "options": {
+      "A": {
+        "name": "贿赂狱卒",
+        "description": "私下塞出一些金币给靠近门缝的年轻狱卒。"
+      },
+      "B": {
+        "name": "检查牢房",
+        "description": "暗中检查牢房的每个角落，寻找逃脱的线索。"
+      },
+      "C": {
+        "name": "伪造文书",
+        "description": "尝试用魔法在心中起草一份伪造的赦免文书。"
+      }
+    },
+    "results": {
+      "A": {
+        "narrative": "你偷偷塞出一些金币给靠近门缝的一名年轻狱卒。他显得有些动摇，但表示可以在换班时带来一件小物件作为回报。贿赂成功了。",
+        "stamina_change": -1,
+        "bribe_change": 2,
+        "item": "小刀"
+      },
+      "B": {
+        "narrative": "你仔细检查了牢房的每一个角落。墙上有一些凹陷，看起来可能可以利用。窗户的铁栏杆有些生锈，或许可以破坏。你记下了所有的细节。",
+        "stamina_change": -2,
+        "sabotage_change": 2
+      },
+      "C": {
+        "narrative": "你闭上眼睛，集中精神。虽然这所监狱有魔法压制的咒符，但在你的脑海中，你仍然可以想象一份赦免文书的样子。你花了一些魔力来完善这个想法，希望它有朝一日能派上用场。",
+        "stamina_change": -1,
+        "mana_change": -1,
+        "legal_change": 2,
+        "item": "伪造文书"
+      }
+    }
+  }
+}

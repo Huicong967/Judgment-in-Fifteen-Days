@@ -1,0 +1,66 @@
+{
+  "ui": {
+    "stamina": "Stamina",
+    "stamina_label": "Stamina",
+    "mana": "Mana",
+    "mana_label": "Mana",
+    "routes": "Route Progress",
+    "bribe": "Bribe",
+    "bribe_full": "Bribery and Negotiation",
+    "sabotage": "Sabotage",
+    "sabotage_full": "Prison Facility Sabotage",
+    "legal": "Legal",
+    "legal_full": "Legal and Documentation",
+    "inventory": "Inventory",
+    "items": "Items",
+    "clues": "Clues",
+    "clues_button": "Truth Clues",
+    "make_choice": "【 Make Choice 】",
+    "day": "Day {day}",
+    "max_days": "of {max_days} days",
+    "continue": "Continue",
+    "choice_result": "【 Choice Result 】",
+    "attribute_change": "【 Attribute Changes 】",
+    "properties": "【 Properties 】",
+    "narrative": "【 Narrative 】",
+    "choose_action": "【 Choose Action 】"
+  },
+  "level1": {
+    "title": "Day 1: Dawn in the Cell",
+    "scene": "The pale morning light filters through the narrow prison window, casting long shadows across the cell. You've been in this filthy, cramped hole for three days now. The hard cot has no mattress, and the toilet is just a hole in the corner. For three days, you've been thinking about how to escape from this hellish place.\n\nYou have 15 days until your execution.\n\nYou hear footsteps in the corridor—probably the shift change for the morning guards. This is an opportunity. You need to make a decision.",
+    "options": {
+      "A": {
+        "name": "Bribe the Guard",
+        "description": "Slip some coins to the young guard passing by the cell door."
+      },
+      "B": {
+        "name": "Inspect the Cell",
+        "description": "Secretly search every corner of your cell for escape opportunities."
+      },
+      "C": {
+        "name": "Forge Documents",
+        "description": "Use your magical knowledge to mentally draft a forged pardon document."
+      }
+    },
+    "results": {
+      "A": {
+        "narrative": "You quietly slip some coins through the cell door to the young guard. He looks hesitant at first, but after a moment, he agrees. He promises to bring you something useful during his next shift. The bribe was successful.",
+        "stamina_change": -1,
+        "bribe_change": 2,
+        "item": "Small Knife"
+      },
+      "B": {
+        "narrative": "You carefully examine every inch of your cell. You notice some indentations in the walls that might be exploitable. The window bars are rusty in places—perhaps they could be broken. You memorize all the details.",
+        "stamina_change": -2,
+        "sabotage_change": 2
+      },
+      "C": {
+        "narrative": "You close your eyes and concentrate. Though the prison has magic-suppressing runes, in your mind you can still imagine what a pardon document would look like. You spend some magical energy refining this mental image, hoping it might be useful someday.",
+        "stamina_change": -1,
+        "mana_change": -1,
+        "legal_change": 2,
+        "item": "Forged Document"
+      }
+    }
+  }
+}
