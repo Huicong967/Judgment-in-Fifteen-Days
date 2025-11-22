@@ -471,6 +471,9 @@ class GUIGameRunnerRedesigned:
         choice_start_y = text_y - int(560 * s)
         choice_spacing_y = int(130 * s)
         
+        # Clear old button windows list and create new ones
+        self.choice_button_windows = []
+        
         # Create choice button images (initially hidden)
         self.choice_btn_photos = []
         self.choice_buttons = []
@@ -494,14 +497,12 @@ class GUIGameRunnerRedesigned:
                 activeforeground="white"
             )
             y_pos = choice_start_y + i * choice_spacing_y
-            # Don't create window yet - will show them later
+            # Create window on canvas
             btn_window = self.canvas.create_window(self.display_width // 2, y_pos, window=btn)
             self.choice_buttons.append(btn)
             # Initially hide the button window
             self.canvas.itemconfig(btn_window, state='hidden')
             # Store window id for show/hide
-            if not hasattr(self, 'choice_button_windows'):
-                self.choice_button_windows = []
             self.choice_button_windows.append(btn_window)
         
         # Bottom-right buttons
@@ -592,15 +593,22 @@ class GUIGameRunnerRedesigned:
     
     def next_sentence(self):
         """Navigate to next sentence."""
+        print(f"[DEBUG] next_sentence: current_index={self.current_sentence_index}, total={len(self.current_text_sentences)}, mode={self.text_display_mode}")
+        
         if self.current_sentence_index < len(self.current_text_sentences) - 1:
             self.current_sentence_index += 1
             self._update_text_display()
+            print(f"[DEBUG] Moved to next sentence: {self.current_sentence_index}")
         elif self.text_display_mode == 'narrative':
             # Finished narrative, show options
+            print("[DEBUG] Reached end of narrative, calling _show_choice_options()")
             self._show_choice_options()
         elif self.text_display_mode == 'result':
             # Finished result text, show settlement modal
+            print("[DEBUG] Reached end of result, calling _show_settlement_modal()")
             self._show_settlement_modal()
+        else:
+            print(f"[DEBUG] next_sentence: no action taken (mode={self.text_display_mode})")
     
     def _update_text_display(self):
         """Update the text box with current sentence."""
@@ -626,21 +634,45 @@ class GUIGameRunnerRedesigned:
     
     def _show_choice_options(self):
         """Show ABC choice buttons after narrative is complete."""
-        # Clear text
-        self.canvas.itemconfig(self.narrative_canvas_text, text="")
-        self.text_display_mode = None
+        print("[DEBUG] _show_choice_options called!")
         
+        # Clear text and mark mode
+        self.canvas.itemconfig(self.narrative_canvas_text, text="")
+        self.text_display_mode = 'choices'
+
         # Get current day options from CSV
         current_day = self.manager.current_day
         options_dict = self.csv_loader.get_options(current_day)
-        
+
+        # Debug: print options and internal state
+        print(f"[DEBUG] Showing choices for day {current_day}: {options_dict}")
+        if hasattr(self, 'choice_button_windows'):
+            print(f"[DEBUG] choice_button_windows count: {len(self.choice_button_windows)}")
+        else:
+            print("[DEBUG] ERROR: No choice_button_windows attribute!")
+            return
+
         # Update and show choice buttons
         for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
             option_text = options_dict.get(choice_key, choice_key)
+            print(f"[DEBUG] Setting button {i} ({choice_key}) to: {option_text}")
+            
+            # Update button label if supported
+            try:
+                btn.config(text=option_text)
+            except Exception as e:
+                print(f"[DEBUG] Could not set button text: {e}")
+            
             btn.config(state=tk.NORMAL)
-            # Show the button window
+            
+            # Show the button window and raise it above other canvas items
             if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
-                self.canvas.itemconfig(self.choice_button_windows[i], state='normal')
+                win_id = self.choice_button_windows[i]
+                print(f"[DEBUG] Showing button window {i} (id={win_id})")
+                self.canvas.itemconfig(win_id, state='normal')
+                self.canvas.tag_raise(win_id)
+        
+        print("[DEBUG] All choice buttons should now be visible!")
     
     def _show_settlement_modal(self):
         """Show settlement modal after result text is complete."""
