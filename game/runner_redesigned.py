@@ -59,14 +59,16 @@ class GUIGameRunnerRedesigned:
         self.choice_btn_photos = []  # For A, B, C buttons
         
         # UI elements
-        self.day_label = None
+        self.day_text_id = None
         self.narrative_text = None
         self.choice_buttons = []
         
-        # Status labels
-        self.stamina_label = None
-        self.mana_label = None
-        self.progress_labels = {}
+        # Status text IDs (canvas text items)
+        self.stamina_text_id = None
+        self.mana_text_id = None
+        self.bribe_text_id = None
+        self.sabotage_text_id = None
+        self.legal_text_id = None
         
         # Tools and clues buttons
         self.tools_button = None
@@ -192,6 +194,14 @@ class GUIGameRunnerRedesigned:
         if self.debug_fullscreen:
             print(f"[DEBUG] _rebuild_ui: canvas will be resized to ({self.display_width},{self.display_height})")
         
+        # Save current text display state before rebuilding
+        saved_sentence_index = self.current_sentence_index
+        saved_text_mode = self.text_display_mode
+        saved_sentences = self.current_text_sentences.copy() if self.current_text_sentences else []
+        
+        if self.debug_fullscreen:
+            print(f"[DEBUG] _rebuild_ui: Saved state - mode={saved_text_mode}, sentence_index={saved_sentence_index}/{len(saved_sentences)}")
+        
         # Clear canvas
         self.canvas.delete("all")
         
@@ -223,6 +233,34 @@ class GUIGameRunnerRedesigned:
         # Refresh current level display
         if self.manager.get_current_level():
             self.show_current_level()
+            
+            # Restore saved text display state
+            if saved_sentences and saved_text_mode:
+                self.current_text_sentences = saved_sentences
+                self.current_sentence_index = saved_sentence_index
+                self.text_display_mode = saved_text_mode
+                
+                if self.debug_fullscreen:
+                    print(f"[DEBUG] _rebuild_ui: Restoring state - mode={saved_text_mode}, sentence_index={saved_sentence_index}")
+                
+                # Redisplay current sentence (unless in choices mode where text should be empty)
+                if saved_text_mode != 'choices':
+                    self._update_text_display()
+                else:
+                    # In choices mode, clear text and show buttons
+                    if self.debug_fullscreen:
+                        print(f"[DEBUG] _rebuild_ui: Restoring choices mode")
+                    self.canvas.itemconfig(self.narrative_canvas_text, text="")
+                    # Show choice buttons
+                    current_day = self.manager.current_day
+                    options_dict = self.csv_loader.get_options(current_day)
+                    for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
+                        option_text = options_dict.get(choice_key, choice_key)
+                        btn.config(text=option_text, state=tk.NORMAL)
+                        if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
+                            win_id = self.choice_button_windows[i]
+                            self.canvas.itemconfig(win_id, state='normal')
+                            self.canvas.tag_raise(win_id)
     
     def _load_background_for_day(self, day: int):
         """Load the background image for the specified day."""
@@ -341,54 +379,59 @@ class GUIGameRunnerRedesigned:
         
         state = self.manager.state
         
-        # Stamina label
-        self.stamina_label = tk.Label(
-            self.window,
-            text=f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}",
+        # Stamina label (using canvas text for transparent background)
+        stamina_text = f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}"
+        self.stamina_text_id = self.canvas.create_text(
+            status_x,
+            status_y_start,
+            text=stamina_text,
             font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
-            bg="white",
-            fg="black"
+            fill="white",
+            anchor=tk.W
         )
-        self.canvas.create_window(status_x, status_y_start, anchor=tk.W, window=self.stamina_label)
         
-        # Mana label
-        self.mana_label = tk.Label(
-            self.window,
-            text=f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}",
+        # Mana label (using canvas text for transparent background)
+        mana_text = f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}"
+        self.mana_text_id = self.canvas.create_text(
+            status_x,
+            status_y_start + int(30 * s),
+            text=mana_text,
             font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
-            bg="white",
-            fg="black"
+            fill="white",
+            anchor=tk.W
         )
-        self.canvas.create_window(status_x, status_y_start + int(30 * s), anchor=tk.W, window=self.mana_label)
         
-        # Progress labels
+        # Progress labels (using canvas text for transparent background)
         progress_y = status_y_start + int(60 * s)
-        self.progress_labels['bribe'] = tk.Label(
-            self.window,
-            text=f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}",
+        bribe_text = f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
+        self.bribe_text_id = self.canvas.create_text(
+            status_x,
+            progress_y,
+            text=bribe_text,
             font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
-            bg="white",
-            fg="black"
+            fill="white",
+            anchor=tk.W
         )
-        self.canvas.create_window(status_x, progress_y, anchor=tk.W, window=self.progress_labels['bribe'])
         
-        self.progress_labels['sabotage'] = tk.Label(
-            self.window,
-            text=f"破坏: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}",
+        sabotage_text = f"破坏: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}"
+        self.sabotage_text_id = self.canvas.create_text(
+            status_x,
+            progress_y + int(25 * s),
+            text=sabotage_text,
             font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
-            bg="white",
-            fg="black"
+            fill="white",
+            anchor=tk.W
         )
-        self.canvas.create_window(status_x, progress_y + int(25 * s), anchor=tk.W, window=self.progress_labels['sabotage'])
         
-        self.progress_labels['legal'] = tk.Label(
-            self.window,
-            text=f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}",
+        legal_text = f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
+        self.legal_text_id = self.canvas.create_text(
+            status_x,
+            progress_y + int(50 * s),
+            text=legal_text,
             font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
-            bg="white",
-            fg="black"
+            fill="white",
+            anchor=tk.W
         )
-        self.canvas.create_window(status_x, progress_y + int(50 * s), anchor=tk.W, window=self.progress_labels['legal'])
         
         # Tools and Clues buttons below progress (vertical layout)
         button_start_y = progress_y + int(90 * s)
@@ -426,15 +469,15 @@ class GUIGameRunnerRedesigned:
         )
         self.canvas.create_window(status_x + int(60 * s), button_start_y + button_spacing_y, anchor=tk.W, window=self.clues_button)
         
-        # Day label at top-center
-        self.day_label = tk.Label(
-            self.window,
+        # Day label at top-center (using canvas text for transparent background)
+        self.day_text_id = self.canvas.create_text(
+            self.display_width // 2,
+            int(30 * s),
             text="",
             font=tkfont.Font(family="微软雅黑", size=int(24 * s), weight="bold"),
-            bg="black",
-            fg="white"
+            fill="white",
+            anchor=tk.N
         )
-        self.canvas.create_window(self.display_width // 2, int(30 * s), window=self.day_label)
         
         # Language button at top-right
         lang_text = "English" if self.current_language == "中文" else "中文"
@@ -710,7 +753,7 @@ class GUIGameRunnerRedesigned:
         # Create modal
         modal = tk.Toplevel(self.window)
         modal.title("系统结算" if self.current_language == "中文" else "Settlement")
-        modal.geometry("700x500")
+        modal.geometry("700x400")
         modal.configure(bg="black")
         modal.transient(self.window)
         modal.grab_set()
@@ -718,14 +761,14 @@ class GUIGameRunnerRedesigned:
         # Center the modal
         modal.update_idletasks()
         x = (self.window.winfo_screenwidth() // 2) - (700 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (500 // 2)
-        modal.geometry(f"700x500+{x}+{y}")
+        y = (self.window.winfo_screenheight() // 2) - (400 // 2)
+        modal.geometry(f"700x400+{x}+{y}")
         
         # Settlement text
         text_widget = tk.Text(
             modal,
             width=70,
-            height=20,
+            height=15,
             font=tkfont.Font(family="微软雅黑", size=12),
             bg="black",
             fg="white",
@@ -741,15 +784,22 @@ class GUIGameRunnerRedesigned:
             modal.destroy()
             self.continue_game()
         
+        print(f"[DEBUG] Creating continue button with square size")
         continue_btn = tk.Button(
             modal,
             text="继续" if self.current_language == "中文" else "Continue",
             font=tkfont.Font(family="微软雅黑", size=14),
             command=on_continue,
-            width=15,
+            width=6,
             height=2
         )
         continue_btn.pack(pady=10)
+        
+        # Force update to get actual size
+        modal.update_idletasks()
+        btn_width = continue_btn.winfo_width()
+        btn_height = continue_btn.winfo_height()
+        print(f"[DEBUG] Button actual size: width={btn_width}px, height={btn_height}px")
         
         # Wait for modal to close
         modal.wait_window()
@@ -888,9 +938,9 @@ class GUIGameRunnerRedesigned:
         # Load background for current day
         self._load_background_for_day(current_day)
         
-        # Update day label
+        # Update day label (now using canvas text)
         day_text = f"第 {current_day} 天" if self.current_language == "中文" else f"Day {current_day}"
-        self.day_label.config(text=day_text)
+        self.canvas.itemconfig(self.day_text_id, text=day_text)
         
         # Update status displays
         self._update_status_display()
@@ -945,24 +995,22 @@ class GUIGameRunnerRedesigned:
         """Update all status labels with current game state."""
         state = self.manager.state
         
-        # Update stamina and mana
-        self.stamina_label.config(
-            text=f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}"
-        )
-        self.mana_label.config(
-            text=f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}"
-        )
+        # Update stamina and mana (now using canvas text items)
+        stamina_text = f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}"
+        self.canvas.itemconfig(self.stamina_text_id, text=stamina_text)
+        
+        mana_text = f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}"
+        self.canvas.itemconfig(self.mana_text_id, text=mana_text)
         
         # Update progress
-        self.progress_labels['bribe'].config(
-            text=f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
-        )
-        self.progress_labels['sabotage'].config(
-            text=f"破坏: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}"
-        )
-        self.progress_labels['legal'].config(
-            text=f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
-        )
+        bribe_text = f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
+        self.canvas.itemconfig(self.bribe_text_id, text=bribe_text)
+        
+        sabotage_text = f"破坏: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}"
+        self.canvas.itemconfig(self.sabotage_text_id, text=sabotage_text)
+        
+        legal_text = f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
+        self.canvas.itemconfig(self.legal_text_id, text=legal_text)
     
     def on_choice_selected(self, choice: str):
         """Handle choice selection."""

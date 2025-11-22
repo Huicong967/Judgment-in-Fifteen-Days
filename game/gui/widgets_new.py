@@ -617,10 +617,12 @@ class ResultWindow(tk.Toplevel):
         continue_btn = tk.Button(
             main_frame,
             text=continue_text,
-            font=('Arial', 10, 'bold'),
+            font=('Arial', 20, 'bold'),
             bg=Colors.ACCENT,
             fg=Colors.BG_DARK,
             cursor='hand2',
+            width=6,
+            height=4,
             command=self.destroy
         )
         continue_btn.pack(pady=10)
