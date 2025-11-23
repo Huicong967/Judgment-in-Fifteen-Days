@@ -5,17 +5,22 @@ from game.level import Level
 from game.state import GameState
 
 
-def get_special_text(header: str) -> str:
+def get_special_text(header: str, language: str = '中文') -> str:
     """Return the special block text for a header like '故事背景' or '体力值≤0'.
 
     Strategy: read the CSV file lines and find a row whose first cell equals header,
     then return the first non-empty cell in the subsequent non-empty row(s).
+    
+    Args:
+        header: The header to search for (e.g., '故事背景' or 'Story background')
+        language: Language for CSV file ('中文' or 'English')
     """
     import os
     root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    path = os.path.join(root, 'Chinese Text.csv')
+    filename = 'Chinese Text.csv' if language == '中文' else 'English Text.csv'
+    path = os.path.join(root, filename)
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8-sig') as f:
             lines = [line.rstrip('\n') for line in f]
     except Exception:
         return ''

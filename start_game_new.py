@@ -11,10 +11,13 @@ import tkinter as tk
 # Ensure project root is on sys.path so `import game.*` works
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from game.runner_redesigned import GUIGameRunnerRedesigned
+from game.runner_redesigned import GUIGameRunnerRedesigned, show_language_selection_dialog
 from game.manager import LevelManager
 
 if __name__ == '__main__':
+    # Show language selection dialog first
+    selected_language = show_language_selection_dialog()
+    
     # Create main window
     root = tk.Tk()
     root.title("Judgment in Fifteen Days - 十五天的审判")
@@ -23,8 +26,8 @@ if __name__ == '__main__':
     # Create manager
     manager = LevelManager()
     
-    # Create runner
-    runner = GUIGameRunnerRedesigned(manager, root)
+    # Create runner with selected language
+    runner = GUIGameRunnerRedesigned(manager, root, initial_language=selected_language)
     
     # Set up window close protocol
     def on_closing():
@@ -43,3 +46,4 @@ if __name__ == '__main__':
     
     # Run main loop
     root.mainloop()
+

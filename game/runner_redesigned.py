@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import font as tkfont
+from tkinter import simpledialog
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import os
 import re
@@ -11,15 +12,74 @@ from game.state import GameState
 from game.csv_text_loader import CSVTextLoader
 
 
+def number_to_chinese(num):
+    """Convert number to Chinese characters (1-15)."""
+    chinese_nums = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十',
+                    '十一', '十二', '十三', '十四', '十五']
+    if 1 <= num <= 15:
+        return chinese_nums[num]
+    return str(num)
+
+
+def show_language_selection_dialog():
+    """Show language selection dialog before starting the game."""
+    dialog = tk.Tk()
+    dialog.title("Language / 语言")
+    dialog.geometry("400x200")
+    dialog.resizable(False, False)
+    
+    # Center the dialog
+    dialog.update_idletasks()
+    x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+    y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+    dialog.geometry(f"+{x}+{y}")
+    
+    selected_language = {"lang": "中文"}  # Default to Chinese
+    
+    # Title label
+    title_font = tkfont.Font(family="微软雅黑", size=16, weight="bold")
+    title_label = tk.Label(dialog, text="Please Select Language\n请选择语言", 
+                          font=title_font, pady=20)
+    title_label.pack()
+    
+    # Button frame
+    button_frame = tk.Frame(dialog)
+    button_frame.pack(pady=10)
+    
+    button_font = tkfont.Font(family="微软雅黑", size=14)
+    
+    def select_chinese():
+        selected_language["lang"] = "中文"
+        dialog.destroy()
+    
+    def select_english():
+        selected_language["lang"] = "English"
+        dialog.destroy()
+    
+    # Chinese button
+    cn_button = tk.Button(button_frame, text="中文", font=button_font,
+                         width=12, height=2, command=select_chinese)
+    cn_button.pack(side=tk.LEFT, padx=10)
+    
+    # English button
+    en_button = tk.Button(button_frame, text="English", font=button_font,
+                         width=12, height=2, command=select_english)
+    en_button.pack(side=tk.LEFT, padx=10)
+    
+    dialog.mainloop()
+    
+    return selected_language["lang"]
+
+
 class GUIGameRunnerRedesigned:
-    def __init__(self, manager: LevelManager, window: tk.Tk, on_language_change=None, on_game_over=None):
+    def __init__(self, manager: LevelManager, window: tk.Tk, initial_language='中文', on_language_change=None, on_game_over=None):
         self.manager = manager
         self.window = window
         self.on_language_change_callback = on_language_change
         self.on_game_over_callback = on_game_over
         
-        # Language setting
-        self.current_language = os.environ.get('AUTO_LANG', '中文')
+        # Language setting - use parameter instead of environment variable
+        self.current_language = initial_language
         
         # CSV text loader
         self.csv_loader = CSVTextLoader(language=self.current_language)
@@ -69,6 +129,7 @@ class GUIGameRunnerRedesigned:
         self.bribe_text_id = None
         self.sabotage_text_id = None
         self.legal_text_id = None
+        self.mystery_text_id = None
         
         # Tools and clues buttons
         self.tools_button = None
@@ -80,6 +141,10 @@ class GUIGameRunnerRedesigned:
         
         # Language button
         self.lang_button = None
+        
+        # Story background modal tracking
+        self.story_modal = None
+        self.story_modal_open = False
         
         # Result popup elements
         self.result_popup = None
@@ -111,11 +176,11 @@ class GUIGameRunnerRedesigned:
         
         # Try to use a nice font, fallback to default
         try:
-            font_size = int(16 * self.scale)
+            font_size = int(20 * self.scale)  # Increased from 16 to 20
             font = ImageFont.truetype("msyh.ttc", font_size)  # Microsoft YaHei
         except:
             try:
-                font = ImageFont.truetype("arial.ttf", int(14 * self.scale))
+                font = ImageFont.truetype("arial.ttf", int(18 * self.scale))  # Increased from 14 to 18
             except:
                 font = ImageFont.load_default()
         
@@ -386,7 +451,7 @@ class GUIGameRunnerRedesigned:
             status_x,
             status_y_start,
             text=stamina_text,
-            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
         )
@@ -396,21 +461,21 @@ class GUIGameRunnerRedesigned:
                     else f"Mana: {state.mana}/{state.max_mana}")
         self.mana_text_id = self.canvas.create_text(
             status_x,
-            status_y_start + int(30 * s),
+            status_y_start + int(35 * s),
             text=mana_text,
-            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
         )
         
         # Progress labels (using canvas text for transparent background)
-        progress_y = status_y_start + int(60 * s)
+        progress_y = status_y_start + int(70 * s)
         bribe_text = f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
         self.bribe_text_id = self.canvas.create_text(
             status_x,
             progress_y,
             text=bribe_text,
-            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
         )
@@ -418,9 +483,9 @@ class GUIGameRunnerRedesigned:
         sabotage_text = f"破坏: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}"
         self.sabotage_text_id = self.canvas.create_text(
             status_x,
-            progress_y + int(25 * s),
+            progress_y + int(35 * s),
             text=sabotage_text,
-            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
         )
@@ -428,16 +493,26 @@ class GUIGameRunnerRedesigned:
         legal_text = f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
         self.legal_text_id = self.canvas.create_text(
             status_x,
-            progress_y + int(50 * s),
+            progress_y + int(70 * s),
             text=legal_text,
-            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
+            fill="white",
+            anchor=tk.W
+        )
+        
+        mystery_text = f"?: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}"
+        self.mystery_text_id = self.canvas.create_text(
+            status_x,
+            progress_y + int(105 * s),
+            text=mystery_text,
+            font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
         )
         
         # Tools and Clues buttons below progress (vertical layout)
-        button_start_y = progress_y + int(90 * s)
-        button_spacing_y = int(70 * s)
+        button_start_y = progress_y + int(165 * s)
+        button_spacing_y = int(80 * s)
         
         # Create button images with text (1/4 size)
         tools_text = "道具" if self.current_language == "中文" else "Tools"
@@ -457,7 +532,7 @@ class GUIGameRunnerRedesigned:
             bg="black",
             activebackground="black"
         )
-        self.canvas.create_window(status_x + int(60 * s), button_start_y, anchor=tk.W, window=self.tools_button)
+        self.canvas.create_window(status_x, button_start_y, anchor=tk.W, window=self.tools_button)
         
         # Clues button
         self.clues_button = tk.Button(
@@ -469,7 +544,7 @@ class GUIGameRunnerRedesigned:
             bg="black",
             activebackground="black"
         )
-        self.canvas.create_window(status_x + int(60 * s), button_start_y + button_spacing_y, anchor=tk.W, window=self.clues_button)
+        self.canvas.create_window(status_x, button_start_y + button_spacing_y, anchor=tk.W, window=self.clues_button)
         
         # Day label at top-center (using canvas text for transparent background)
         self.day_text_id = self.canvas.create_text(
@@ -483,7 +558,7 @@ class GUIGameRunnerRedesigned:
         
         # Language button at top-right
         lang_text = "English" if self.current_language == "中文" else "中文"
-        self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.25)
+        self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.4)
         
         self.lang_button = tk.Button(
             self.window,
@@ -612,11 +687,14 @@ class GUIGameRunnerRedesigned:
             self.canvas.tag_raise(self.right_button_id)
     
     def _split_into_sentences(self, text: str) -> list:
-        """Split text into sentences based on Chinese/English punctuation."""
-        # Split by sentence-ending punctuation
-        sentences = re.split(r'([。！？.!?])', text)
+        """Split text into sentences based on Chinese/English punctuation.
+        Keep quotation marks that immediately follow sentence-ending punctuation.
+        Also keep text after closing quotes if on same line (e.g., '。"那人说')."""
+        # Split by sentence-ending punctuation + optional quote, but only before whitespace or end
+        # This keeps things like '。"那人说' together as one sentence
+        sentences = re.split(r'([。！？.!?][""\'"'']?)(?=\s|$)', text)
         
-        # Recombine punctuation with sentences
+        # Recombine punctuation (with optional quotes) with sentences
         result = []
         for i in range(0, len(sentences) - 1, 2):
             if i + 1 < len(sentences):
@@ -652,6 +730,10 @@ class GUIGameRunnerRedesigned:
             # Finished result text, show settlement modal
             print("[DEBUG] Reached end of result, calling _show_settlement_modal()")
             self._show_settlement_modal()
+        elif self.text_display_mode == 'transition':
+            # Finished transition text, proceed to next day (Day 6)
+            print("[DEBUG] Reached end of transition, proceeding to Day 6")
+            self._proceed_to_day6()
         else:
             print(f"[DEBUG] next_sentence: no action taken (mode={self.text_display_mode})")
     
@@ -745,12 +827,19 @@ class GUIGameRunnerRedesigned:
         settlement_lines.append(f"贿赂进度: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}")
         settlement_lines.append(f"破坏进度: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}")
         settlement_lines.append(f"法学进度: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}")
+        settlement_lines.append(f"?进度: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}")
         
         if state.inventory:
             settlement_lines.append("")
-            settlement_lines.append("持有物品：" if self.current_language == "中文" else "Inventory:")
+            settlement_lines.append("持有道具：" if self.current_language == "中文" else "Items:")
             for item in state.inventory:
                 settlement_lines.append(f"  • {item}")
+        
+        if state.clues:
+            settlement_lines.append("")
+            settlement_lines.append("持有线索：" if self.current_language == "中文" else "Clues:")
+            for clue in state.clues:
+                settlement_lines.append(f"  • {clue}")
         
         settlement_text = "\n".join(settlement_lines)
         
@@ -792,7 +881,7 @@ class GUIGameRunnerRedesigned:
         continue_btn = tk.Button(
             modal,
             text="继续" if self.current_language == "中文" else "Continue",
-            font=tkfont.Font(family="微软雅黑", size=12),
+            font=tkfont.Font(family="微软雅黑", size=8),
             command=on_continue,
             width=6,
             height=2
@@ -832,8 +921,9 @@ class GUIGameRunnerRedesigned:
     
     def _show_story_directly(self):
         """Show story modal or start game."""
-        # Get story background text
-        story_text = get_special_text('故事背景')
+        # Get story background text based on current language
+        header = '故事背景' if self.current_language == "中文" else 'Story background'
+        story_text = get_special_text(header, self.current_language)
         if story_text:
             self._show_story_modal(story_text)
         else:
@@ -847,7 +937,12 @@ class GUIGameRunnerRedesigned:
         modal.geometry("800x600")
         modal.configure(bg="black")
         modal.transient(self.window)
-        modal.grab_set()
+        # Don't grab_set to allow language button clicks
+        # modal.grab_set()
+        
+        # Save modal reference and set flag
+        self.story_modal = modal
+        self.story_modal_open = True
         
         # Center the modal
         modal.update_idletasks()
@@ -872,9 +967,20 @@ class GUIGameRunnerRedesigned:
         
         # Confirm button
         def on_confirm():
+            self.story_modal_open = False
+            self.story_modal = None
             modal.destroy()
             # Exit fullscreen then re-enter to refresh UI
             self.window.after(50, self._refresh_fullscreen_and_show)
+        
+        # Handle modal close
+        def on_close():
+            self.story_modal_open = False
+            self.story_modal = None
+            modal.destroy()
+            self.window.after(50, self._refresh_fullscreen_and_show)
+        
+        modal.protocol("WM_DELETE_WINDOW", on_close)
         
         confirm_btn = tk.Button(
             modal,
@@ -886,8 +992,8 @@ class GUIGameRunnerRedesigned:
         )
         confirm_btn.pack(pady=10)
         
-        # Wait for modal to close
-        modal.wait_window()
+        # Don't wait_window to allow language switching
+        # modal.wait_window()
     
     def _refresh_fullscreen_and_show(self):
         """Exit and re-enter fullscreen to refresh UI, then show content."""
@@ -943,7 +1049,10 @@ class GUIGameRunnerRedesigned:
         self._load_background_for_day(current_day)
         
         # Update day label (now using canvas text)
-        day_text = f"第 {current_day} 天" if self.current_language == "中文" else f"Day {current_day}"
+        if self.current_language == "中文":
+            day_text = f"第{number_to_chinese(current_day)}天"
+        else:
+            day_text = f"Day {current_day}"
         self.canvas.itemconfig(self.day_text_id, text=day_text)
         
         # Update status displays
@@ -1015,6 +1124,9 @@ class GUIGameRunnerRedesigned:
         
         legal_text = f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
         self.canvas.itemconfig(self.legal_text_id, text=legal_text)
+        
+        mystery_text = f"?: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}"
+        self.canvas.itemconfig(self.mystery_text_id, text=mystery_text)
     
     def on_choice_selected(self, choice: str):
         """Handle choice selection."""
@@ -1042,7 +1154,9 @@ class GUIGameRunnerRedesigned:
             bribe_delta=settlement_data['bribe_change'],
             sabotage_delta=settlement_data['sabotage_change'],
             legal_delta=settlement_data['legal_change'],
-            add_items=settlement_data['items_gained'] + settlement_data['clues_gained'],
+            mystery_delta=settlement_data['mystery_change'],
+            add_items=settlement_data['items_gained'],
+            add_clues=settlement_data['clues_gained'],
             remove_items=[]
         )
         
@@ -1062,14 +1176,14 @@ class GUIGameRunnerRedesigned:
         if state.stamina < 0 or state.mana < 0:
             special_key = None
             if state.stamina < 0 and state.mana < 0:
-                special_key = '体力值魔力值同时≤0'
+                special_key = '体力值魔力值同时≤0' if self.current_language == "中文" else 'Stamina Value Magic Value ≤ 0'
             elif state.stamina < 0:
-                special_key = '体力值≤0'
+                special_key = '体力值≤0' if self.current_language == "中文" else 'Stamina value ≤ 0'
             elif state.mana < 0:
-                special_key = '魔力值≤0'
+                special_key = '魔力值≤0' if self.current_language == "中文" else 'Magic value ≤ 0'
             
             if special_key:
-                special_text = get_special_text(special_key)
+                special_text = get_special_text(special_key, self.current_language)
                 if special_text:
                     # Show special end dialog after result display finishes
                     # For now, show immediately
@@ -1196,29 +1310,87 @@ class GUIGameRunnerRedesigned:
         return result['action']
     
     def _show_day56_screen(self):
-        """Show Day 56 screen after Day 5 settlement."""
-        # Load Day 56 background
+        """Show Day 56 transition screen after Day 5 settlement."""
+        # Get transition text from CSV
+        transition_text = self.csv_loader.get_transition_text(5)
+        
+        if not transition_text:
+            # If no transition text, just proceed to day 6
+            self._proceed_to_day6()
+            return
+        
+        print("[DEBUG] Showing Day56 transition screen")
+        
+        # Load Day 56 background if exists, otherwise use day 5 background
         day56_path = "Day 56.PNG"
         if os.path.exists(day56_path):
-            day56_image = Image.open(day56_path)
-            day56_image = day56_image.resize((self.display_width, self.display_height), Image.Resampling.LANCZOS)
-            day56_photo = ImageTk.PhotoImage(day56_image)
+            print(f"[DEBUG] Loading Day 56 background from {day56_path}")
+            background_image = Image.open(day56_path)
+        else:
+            # Try to load day 5 background
+            bg_path = os.path.join("normalized_backgrounds", "5 day.png")
+            if os.path.exists(bg_path):
+                print(f"[DEBUG] Loading Day 5 background from {bg_path}")
+                background_image = Image.open(bg_path)
+            else:
+                # If no background, use current background
+                print("[DEBUG] No background found, using current")
+                background_image = None
+        
+        if background_image:
+            # Resize using cover mode (same as _load_background_for_day)
+            img_w, img_h = background_image.size
+            if img_w > 0 and img_h > 0:
+                cover_scale = max(self.display_width / img_w, self.display_height / img_h)
+                cover_w = max(1, int(img_w * cover_scale))
+                cover_h = max(1, int(img_h * cover_scale))
+                resized = background_image.resize((cover_w, cover_h), Image.Resampling.LANCZOS)
+                
+                # Crop center to display size
+                left = (cover_w - self.display_width) // 2
+                top = (cover_h - self.display_height) // 2
+                right = left + self.display_width
+                bottom = top + self.display_height
+                cropped = resized.crop((left, top, right, bottom))
+                
+                bg_rgb = cropped.convert('RGB')
+                self.bg_photo = ImageTk.PhotoImage(bg_rgb)
+            else:
+                self.bg_photo = ImageTk.PhotoImage(Image.new('RGB', (self.display_width, self.display_height), color='black'))
             
-            # Update canvas
+            # Update canvas background
             self.canvas.delete("all")
-            self.canvas.create_image(0, 0, anchor=tk.NW, image=day56_photo)
-            self.canvas.day56_photo = day56_photo  # Keep reference
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.bg_photo)
             
-            # Show continue button to proceed to Day 6
-            continue_btn = tk.Button(
-                self.window,
-                text="继续" if self.current_language == "中文" else "Continue",
-                font=tkfont.Font(family="微软雅黑", size=int(16 * self.scale)),
-                command=lambda: self._proceed_to_day6(),
-                width=15,
-                height=2
-            )
-            self.canvas.create_window(self.display_width // 2, self.display_height - int(100 * self.scale), window=continue_btn)
+            # Recreate UI elements (status, buttons, etc.)
+            print("[DEBUG] Recreating UI elements")
+            self._create_ui_elements()
+            
+            # Load DialogBox for text display
+            dialog_box_path = "DialogBox.png"
+            if os.path.exists(dialog_box_path):
+                dialog_box = Image.open(dialog_box_path)
+                box_width = int(dialog_box.width * self.scale)
+                box_height = int(dialog_box.height * self.scale)
+                dialog_box = dialog_box.resize((box_width, box_height), Image.Resampling.LANCZOS)
+                self.dialog_box_photo = ImageTk.PhotoImage(dialog_box)
+                
+                # Position at bottom of the screen
+                x = self.display_width // 2
+                y = self.display_height - (box_height // 2)
+                self.canvas.create_image(x, y, image=self.dialog_box_photo, tags="dialogbox")
+        
+        # Split transition text into sentences and prepare for display
+        self.current_text_sentences = self._split_into_sentences(transition_text)
+        self.current_sentence_index = 0
+        self.text_display_mode = 'transition'  # Special mode for transition
+        
+        print(f"[DEBUG] Transition text split into {len(self.current_text_sentences)} sentences")
+        
+        # Display first sentence
+        self._update_text_display()
+        
+        print("[DEBUG] Day56 screen setup complete")
     
     def _proceed_to_day6(self):
         """Proceed to Day 6 after Day 56 screen."""
@@ -1238,21 +1410,23 @@ class GUIGameRunnerRedesigned:
             self.result_popup = None
         
         current_day = self.manager.current_day
-        self.manager.current_day += 1
         
-        # Check if we just finished Day 5 - show Day 56 screen
+        # Check if we just finished Day 5 - show Day 56 screen BEFORE incrementing
         if current_day == 5:
+            # Don't increment day yet - Day56 screen will handle it
             self._show_day56_screen()
         # Check if game is over (15 days completed)
-        elif self.manager.current_day > 15:
+        elif current_day >= 15:
+            self.manager.current_day += 1
             self.on_game_over()
         else:
+            self.manager.current_day += 1
             self.show_current_level()
     
     def show_tools(self):
         """Show tools inventory."""
         state = self.manager.state
-        # Use inventory as source; if you have tagged items you can filter here
+        # Use inventory as source for tools/items
         tools = state.inventory or []
         tools_list = "\n".join(tools) if tools else ("无道具" if self.current_language == "中文" else "No tools")
         
@@ -1279,8 +1453,8 @@ class GUIGameRunnerRedesigned:
     def show_clues(self):
         """Show clues inventory."""
         state = self.manager.state
-        # Currently use inventory as source of clues as well. If items are tagged you can filter here.
-        clues = state.inventory or []
+        # Use clues list as source
+        clues = state.clues or []
         clues_list = "\n".join(clues) if clues else ("无线索" if self.current_language == "中文" else "No clues")
         
         popup = tk.Toplevel(self.window)
@@ -1322,19 +1496,34 @@ class GUIGameRunnerRedesigned:
         new_lang = "English" if self.current_language == "中文" else "中文"
         self.current_language = new_lang
         
-        # Recreate button images with new language text
-        lang_text = "English" if self.current_language == "中文" else "中文"
-        self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.25)
-        self.lang_button.config(image=self.lang_btn_photo)
+        # Check if story modal is open
+        story_was_open = self.story_modal_open
+        if story_was_open and self.story_modal:
+            # Close the current story modal
+            try:
+                self.story_modal.destroy()
+            except:
+                pass
+            self.story_modal = None
+            self.story_modal_open = False
         
-        # Update all UI text
-        self.tools_button.config(text="道具" if new_lang == "中文" else "Tools")
-        self.clues_button.config(text="线索" if new_lang == "中文" else "Clues")
-        self.recall_button.config(text="回忆" if new_lang == "中文" else "Recall")
-        self.continue_button.config(text="继续" if new_lang == "中文" else "Continue")
+        # Reload CSV data with new language
+        self.csv_loader = CSVTextLoader(language=self.current_language)
         
-        # Refresh current level display
-        self.show_current_level()
+        # Rebuild entire UI with new language
+        self._calculate_scale()
+        self._rebuild_ui()
+        
+        # If story modal was open, reopen it with new language
+        if story_was_open:
+            header = '故事背景' if self.current_language == "中文" else 'Story background'
+            story_text = get_special_text(header, self.current_language)
+            if story_text:
+                self._show_story_modal(story_text)
+        else:
+            # Refresh current level display
+            if self.manager.get_current_level():
+                self.show_current_level()
         
         # Call callback if provided
         if self.on_language_change_callback:
