@@ -792,7 +792,7 @@ class GUIGameRunnerRedesigned:
         continue_btn = tk.Button(
             modal,
             text="继续" if self.current_language == "中文" else "Continue",
-            font=tkfont.Font(family="微软雅黑", size=14),
+            font=tkfont.Font(family="微软雅黑", size=12),
             command=on_continue,
             width=6,
             height=2
