@@ -33,8 +33,8 @@ class PropertyPanel(tk.Frame):
         self.i18n = get_i18n()
         self.max_stamina = 50
         self.max_mana = 50
-        self.current_stamina = 20
-        self.current_mana = 20
+        self.current_stamina = 10
+        self.current_mana = 10
         self.on_clues_click = on_clues_click
         self.clues_overlay = None
         self._create_widgets()

@@ -3,8 +3,10 @@ from typing import Dict, List
 
 @dataclass
 class GameState:
-    stamina: int = 20  # 体力 (Initial: 20, Max: 50)
-    mana: int = 20     # 魔力 (Initial: 20, Max: 50)
+    stamina: int = 10  # 体力 (Initial: 10)
+    mana: int = 10     # 魔力 (Initial: 10)
+    max_stamina: int = 50
+    max_mana: int = 50
     bribe_progress: int = 0
     sabotage_progress: int = 0
     legal_progress: int = 0
@@ -13,8 +15,9 @@ class GameState:
     def apply_change(self, stamina_delta=0, mana_delta=0,
                      bribe_delta=0, sabotage_delta=0, legal_delta=0,
                      add_items: List[str]=None, remove_items: List[str]=None):
-        self.stamina = max(0, self.stamina + stamina_delta)
-        self.mana = max(0, self.mana + mana_delta)
+        # Clamp values between 0 and their respective maxima
+        self.stamina = min(self.max_stamina, max(0, self.stamina + stamina_delta))
+        self.mana = min(self.max_mana, max(0, self.mana + mana_delta))
         self.bribe_progress = max(0, self.bribe_progress + bribe_delta)
         self.sabotage_progress = max(0, self.sabotage_progress + sabotage_delta)
         self.legal_progress = max(0, self.legal_progress + legal_delta)

@@ -380,7 +380,8 @@ class GUIGameRunnerRedesigned:
         state = self.manager.state
         
         # Stamina label (using canvas text for transparent background)
-        stamina_text = f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}"
+        stamina_text = (f"体力值: {state.stamina}/{state.max_stamina}" if self.current_language == "中文" 
+                       else f"Stamina: {state.stamina}/{state.max_stamina}")
         self.stamina_text_id = self.canvas.create_text(
             status_x,
             status_y_start,
@@ -391,7 +392,8 @@ class GUIGameRunnerRedesigned:
         )
         
         # Mana label (using canvas text for transparent background)
-        mana_text = f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}"
+        mana_text = (f"魔力值: {state.mana}/{state.max_mana}" if self.current_language == "中文" 
+                    else f"Mana: {state.mana}/{state.max_mana}")
         self.mana_text_id = self.canvas.create_text(
             status_x,
             status_y_start + int(30 * s),
@@ -408,7 +410,7 @@ class GUIGameRunnerRedesigned:
             status_x,
             progress_y,
             text=bribe_text,
-            font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
             fill="white",
             anchor=tk.W
         )
@@ -418,7 +420,7 @@ class GUIGameRunnerRedesigned:
             status_x,
             progress_y + int(25 * s),
             text=sabotage_text,
-            font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
             fill="white",
             anchor=tk.W
         )
@@ -428,7 +430,7 @@ class GUIGameRunnerRedesigned:
             status_x,
             progress_y + int(50 * s),
             text=legal_text,
-            font=tkfont.Font(family="微软雅黑", size=int(12 * s)),
+            font=tkfont.Font(family="微软雅黑", size=int(14 * s)),
             fill="white",
             anchor=tk.W
         )
@@ -736,8 +738,10 @@ class GUIGameRunnerRedesigned:
         # Add current stats
         settlement_lines.append("-" * 30)
         settlement_lines.append("当前状态：" if self.current_language == "中文" else "Current Status:")
-        settlement_lines.append(f"体力值: {state.stamina}" if self.current_language == "中文" else f"Stamina: {state.stamina}")
-        settlement_lines.append(f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}")
+        settlement_lines.append((f"体力值: {state.stamina}/{state.max_stamina}" if self.current_language == "中文" 
+                     else f"Stamina: {state.stamina}/{state.max_stamina}"))
+        settlement_lines.append((f"魔力值: {state.mana}/{state.max_mana}" if self.current_language == "中文" 
+                     else f"Mana: {state.mana}/{state.max_mana}"))
         settlement_lines.append(f"贿赂进度: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}")
         settlement_lines.append(f"破坏进度: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}")
         settlement_lines.append(f"法学进度: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}")
