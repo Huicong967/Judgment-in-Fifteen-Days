@@ -521,14 +521,14 @@ class GUIGameRunnerRedesigned:
         self.choice_btn_photos = []
         self.choice_buttons = []
         for i, label in enumerate(["A", "B", "C"]):
-            # Create button image with label
-            choice_photo = self._create_button_image("option.png", label, scale_factor=0.5)
+            # Create button image without the letter overlay (we'll set the option text at runtime)
+            choice_photo = self._create_button_image("option.png", "", scale_factor=0.5)
             self.choice_btn_photos.append(choice_photo)
             
             btn = tk.Button(
                 self.window,
                 image=choice_photo,
-                text=label,
+                text="",
                 compound='center',
                 font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
                 command=lambda choice=label: self.on_choice_selected(choice),
