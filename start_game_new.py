@@ -20,7 +20,7 @@ if __name__ == '__main__':
     
     # Create main window
     root = tk.Tk()
-    root.title("Judgment in Fifteen Days - 十五天的审判")
+    root.title("Judgment in Fifteen Days - 十五日裁决")
     root.geometry("1920x1080")
     
     # Create manager

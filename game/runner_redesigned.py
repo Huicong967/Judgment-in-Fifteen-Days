@@ -262,9 +262,9 @@ class GUIGameRunnerRedesigned:
         if window_width < 100 or window_height < 100:
             screen_width = self.window.winfo_screenwidth()
             screen_height = self.window.winfo_screenheight()
-            # Use 45% of screen size and reserve more space for taskbar
-            window_width = int(screen_width * 0.45)
-            window_height = int(screen_height * 0.45)
+            # Use 85% of screen size
+            window_width = int(screen_width * 0.85)
+            window_height = int(screen_height * 0.85)
         
         # Calculate scaling to fit window while maintaining aspect ratio
         target_width = 1920
@@ -425,9 +425,14 @@ class GUIGameRunnerRedesigned:
         dialog_box_path = "DialogBox.png"
         if os.path.exists(dialog_box_path):
             dialog_box = Image.open(dialog_box_path)
-            # Scale DialogBox proportionally
-            box_width = int(dialog_box.width * self.scale)
-            box_height = int(dialog_box.height * self.scale)
+            original_width = dialog_box.width
+            original_height = dialog_box.height
+            
+            # DialogBox宽度拉伸到显示宽度,高度按比例缩放保持比例
+            box_width = self.display_width
+            # 保持高度比例 - 基于原始比例计算
+            box_height = int(original_height * self.scale)
+            
             dialog_box = dialog_box.resize((box_width, box_height), Image.Resampling.LANCZOS)
             self.dialog_box_photo = ImageTk.PhotoImage(dialog_box)
             
@@ -451,6 +456,10 @@ class GUIGameRunnerRedesigned:
         # Start in fullscreen borderless mode by default
         screen_w = self.window.winfo_screenwidth()
         screen_h = self.window.winfo_screenheight()
+        
+        # Save default windowed size for when exiting fullscreen (85% of screen)
+        self._default_window_width = int(screen_w * 0.85)
+        self._default_window_height = int(screen_h * 0.85)
         
         self.display_width = screen_w
         self.display_height = screen_h
@@ -1119,8 +1128,8 @@ class GUIGameRunnerRedesigned:
             self.story_modal_open = False
             self.story_modal = None
             modal.destroy()
-            # Exit fullscreen then re-enter to refresh UI
-            self.window.after(50, self._refresh_fullscreen_and_show)
+            # Exit fullscreen then re-enter to refresh UI (minimal delay)
+            self.window.after(10, self._refresh_fullscreen_and_show)
         
         # Handle modal close
         def on_close():
@@ -1128,7 +1137,7 @@ class GUIGameRunnerRedesigned:
             self.story_modal_open = False
             self.story_modal = None
             modal.destroy()
-            self.window.after(50, self._refresh_fullscreen_and_show)
+            self.window.after(10, self._refresh_fullscreen_and_show)
         
         modal.protocol("WM_DELETE_WINDOW", on_close)
         
@@ -1150,12 +1159,12 @@ class GUIGameRunnerRedesigned:
         if self.is_fullscreen:
             # Exit fullscreen first
             self.toggle_fullscreen()
-            # Wait a bit, then re-enter fullscreen
-            self.window.after(100, self._reenter_fullscreen)
+            # Minimal delay before re-entering fullscreen
+            self.window.after(10, self._reenter_fullscreen)
         else:
             # Not in fullscreen, just enter it
             self.toggle_fullscreen()
-            self.window.after(100, self.show_current_level)
+            self.window.after(10, self.show_current_level)
     
     def _reenter_fullscreen(self):
         """Re-enter fullscreen and show content."""
@@ -1622,8 +1631,13 @@ class GUIGameRunnerRedesigned:
             dialog_box_path = "DialogBox.png"
             if os.path.exists(dialog_box_path):
                 dialog_box = Image.open(dialog_box_path)
-                box_width = int(dialog_box.width * self.scale)
-                box_height = int(dialog_box.height * self.scale)
+                original_width = dialog_box.width
+                original_height = dialog_box.height
+                
+                # DialogBox宽度拉伸到显示宽度,高度按比例缩放
+                box_width = self.display_width
+                box_height = int(original_height * self.scale)
+                
                 dialog_box = dialog_box.resize((box_width, box_height), Image.Resampling.LANCZOS)
                 self.dialog_box_photo = ImageTk.PhotoImage(dialog_box)
                 
@@ -2145,8 +2159,13 @@ class GUIGameRunnerRedesigned:
                             dialog_box_path = "DialogBox.png"
                             if os.path.exists(dialog_box_path):
                                 dialog_box = Image.open(dialog_box_path)
-                                box_width = int(dialog_box.width * self.scale)
-                                box_height = int(dialog_box.height * self.scale)
+                                original_width = dialog_box.width
+                                original_height = dialog_box.height
+                                
+                                # DialogBox宽度拉伸到显示宽度,高度按比例缩放
+                                box_width = self.display_width
+                                box_height = int(original_height * self.scale)
+                                
                                 dialog_box = dialog_box.resize((box_width, box_height), Image.Resampling.LANCZOS)
                                 self.dialog_box_photo = ImageTk.PhotoImage(dialog_box)
                                 x = self.display_width // 2
@@ -2231,65 +2250,78 @@ class GUIGameRunnerRedesigned:
             self.on_language_change_callback(new_lang)
 
     def toggle_fullscreen(self):
-        """Toggle fullscreen mode (F11). In fullscreen we try to cover the taskbar by making window fullscreen and topmost."""
-        # Use borderless fullscreen to better cover taskbar (overrideredirect)
+        """Toggle fullscreen mode (F11). Use withdraw/deiconify to ensure overrideredirect works properly."""
         enter_fs = not self.is_fullscreen
         self.is_fullscreen = enter_fs
 
         try:
             if enter_fs:
-                # save previous geometry and overrideredirect
-                try:
-                    self._prev_geometry = self.window.geometry()
-                except Exception:
-                    self._prev_geometry = None
-                try:
-                    self._prev_overrideredirect = bool(self.window.overrideredirect())
-                except Exception:
-                    self._prev_overrideredirect = False
-
-                # set to borderless and cover the whole screen
+                # Enter fullscreen - use borderless window to cover taskbar
                 screen_w = self.window.winfo_screenwidth()
                 screen_h = self.window.winfo_screenheight()
                 
-                # Force display dimensions to screen size BEFORE overrideredirect
+                # Update display dimensions to screen size
                 self.display_width = screen_w
                 self.display_height = screen_h
                 
+                # Use withdraw/deiconify trick to ensure overrideredirect takes effect
+                self.window.withdraw()
                 self.window.overrideredirect(True)
                 self.window.geometry(f"{screen_w}x{screen_h}+0+0")
+                self.window.deiconify()
                 
-                # Force window update to apply geometry
+                # Force multiple updates to ensure geometry and topmost take effect
                 self.window.update_idletasks()
+                self.window.update()
                 
                 # Reconfigure canvas to exact screen size
                 if hasattr(self, 'canvas') and self.canvas:
                     self.canvas.config(width=screen_w, height=screen_h)
-                    self.canvas.pack_forget()
-                    self.canvas.pack(fill=tk.BOTH, expand=True)
                 
+                # Ensure window is on top and covers taskbar
                 self.window.lift()
+                self.window.focus_force()
                 try:
+                    self.window.attributes('-topmost', True)
+                    self.window.attributes('-topmost', False)
                     self.window.attributes('-topmost', True)
                 except Exception:
                     pass
             else:
-                # restore windowed state
-                try:
-                    self.window.overrideredirect(self._prev_overrideredirect)
-                except Exception:
-                    pass
-                try:
-                    if self._prev_geometry:
-                        self.window.geometry(self._prev_geometry)
-                except Exception:
-                    pass
+                # Exit fullscreen - restore windowed state
+                # Calculate windowed size and position (85% of screen)
+                if hasattr(self, '_default_window_width'):
+                    window_w = self._default_window_width
+                    window_h = self._default_window_height
+                else:
+                    screen_w = self.window.winfo_screenwidth()
+                    screen_h = self.window.winfo_screenheight()
+                    window_w = int(screen_w * 0.85)
+                    window_h = int(screen_h * 0.85)
+                
+                # Center the window on screen
+                screen_w = self.window.winfo_screenwidth()
+                screen_h = self.window.winfo_screenheight()
+                x = (screen_w - window_w) // 2
+                y = (screen_h - window_h) // 2
+                
+                # Use withdraw/deiconify to remove overrideredirect
+                self.window.withdraw()
+                self.window.overrideredirect(False)
+                self.window.geometry(f"{window_w}x{window_h}+{x}+{y}")
+                self.window.deiconify()
+                
+                # Update display dimensions
+                self.window.update_idletasks()
+                self.display_width = window_w
+                self.display_height = window_h
+                
                 try:
                     self.window.attributes('-topmost', False)
                 except Exception:
                     pass
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[ERROR] Fullscreen toggle failed: {e}")
 
         # Force window update before recalculating
         self.window.update_idletasks()
