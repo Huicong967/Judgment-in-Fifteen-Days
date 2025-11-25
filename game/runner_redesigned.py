@@ -338,8 +338,19 @@ class GUIGameRunnerRedesigned:
         # Recreate all UI elements
         self._create_ui_elements()
         
-        # Refresh current level display
-        if self.manager.get_current_level():
+        # Refresh current level display - but NOT for special modes
+        # Special modes (transition, death_ending_final) will be restored by the caller
+        if saved_text_mode in ['transition', 'death_ending_final']:
+            # Don't call show_current_level() for special modes
+            # Just restore the saved state
+            if saved_sentences and saved_text_mode:
+                self.current_text_sentences = saved_sentences
+                self.current_sentence_index = saved_sentence_index
+                self.text_display_mode = saved_text_mode
+                
+                if self.debug_fullscreen:
+                    print(f"[DEBUG] _rebuild_ui: Special mode {saved_text_mode}, not calling show_current_level()")
+        elif self.manager.get_current_level():
             self.show_current_level()
             
             # Restore saved text display state
@@ -829,16 +840,43 @@ class GUIGameRunnerRedesigned:
         """Show ABC choice buttons after narrative is complete."""
         print("[DEBUG] _show_choice_options called!")
         
-        # Clear text and mark mode
-        self.canvas.itemconfig(self.narrative_canvas_text, text="")
-        self.text_display_mode = 'choices'
-
         # Get current day options from CSV
         current_day = self.manager.current_day
         options_dict = self.csv_loader.get_options(current_day)
 
         # Debug: print options and internal state
         print(f"[DEBUG] Showing choices for day {current_day}: {options_dict}")
+        
+        # Check if this day has any valid options (Day 15 has none)
+        has_valid_options = any(options_dict.get(k, '').strip() for k in ['A', 'B', 'C'])
+        
+        if not has_valid_options:
+            print(f"[DEBUG] No valid options for day {current_day}, checking for ending text")
+            # Day 15 or other days without choices - check if there's an ending in settlement
+            # Get the settlement text for any option (since there are no real options)
+            settlement_text = self.csv_loader.get_settlement(current_day, 'A')  # Try A first
+            if not settlement_text:
+                settlement_text = self.csv_loader.data.get(current_day, {}).get('settlement_a', '')
+            
+            print(f"[DEBUG] Settlement text for day {current_day}: {settlement_text[:100] if settlement_text else 'None'}")
+            
+            # Check if settlement contains ending trigger
+            if settlement_text and ('触发结局' in settlement_text or 'Trigger Ending' in settlement_text):
+                print(f"[DEBUG] Found ending in settlement, showing black screen ending")
+                # Store the ending text and show it
+                self.pending_ending_text = settlement_text
+                self._show_death_ending_black_screen(settlement_text)
+                return
+            else:
+                # No ending found, show generic game over
+                print(f"[DEBUG] No ending found, calling on_game_over()")
+                self.on_game_over()
+                return
+        
+        # Clear text and mark mode
+        self.canvas.itemconfig(self.narrative_canvas_text, text="")
+        self.text_display_mode = 'choices'
+        
         if hasattr(self, 'choice_button_windows'):
             print(f"[DEBUG] choice_button_windows count: {len(self.choice_button_windows)}")
         else:
@@ -1308,6 +1346,9 @@ class GUIGameRunnerRedesigned:
         """Handle choice selection."""
         current_day = self.manager.current_day
         
+        # Save the choice for language switching
+        self.last_choice = choice
+        
         # Check if player meets requirements for this day and choice (only for days 11, 12, 14 options A/B)
         meets_reqs, unmet_conditions = self.csv_loader.check_requirements(current_day, choice, self.manager.state)
         if not meets_reqs:
@@ -1692,14 +1733,19 @@ class GUIGameRunnerRedesigned:
         
         self.canvas.tag_bind("restart_button", "<Button-1>", restart_game)
     
-    def _show_death_ending_black_screen(self, ending_text: str):
+    def _show_death_ending_black_screen(self, ending_text: str, death_type: str = 'custom'):
         """Transition from normal game screen to black screen death ending.
         
         Args:
             ending_text: The ending text to display on black background
+            death_type: Type of death ending - 'stamina', 'mana', 'both', or 'custom' (default)
         """
-        print(f"[DEBUG] Transitioning to black screen death ending")
+        print(f"[DEBUG] Transitioning to black screen death ending (type: {death_type})")
         print(f"[DEBUG] Ending text: {ending_text[:200]}...")
+        
+        # Store the ending text and type for language switching
+        self.current_ending_text = ending_text
+        self.current_ending_type = death_type
         
         # Clear entire canvas to black
         self.canvas.delete("all")
@@ -1724,6 +1770,9 @@ class GUIGameRunnerRedesigned:
             justify="left",
             tags="death_ending_text"
         )
+        
+        # Set mode to death_ending_final for language switching support
+        self.text_display_mode = 'death_ending_final'
         
         # Show restart button after a brief delay
         self.window.after(1000, self._show_restart_button_on_death)
@@ -1755,8 +1804,25 @@ class GUIGameRunnerRedesigned:
             self._show_day56_screen()
         # Check if game is over (15 days completed)
         elif current_day >= 15:
-            self.manager.current_day += 1
-            self.on_game_over()
+            # Day 15 always has an ending - check if it was stored from settlement
+            if hasattr(self, 'pending_ending_text') and self.pending_ending_text:
+                ending_text = self.pending_ending_text
+                # Clear pending to avoid repeated display
+                self.pending_ending_text = None
+                self._show_death_ending_black_screen(ending_text)
+            else:
+                # No ending stored - this shouldn't happen for Day 15, but handle gracefully
+                # Try to get the ending text from the last settlement
+                if hasattr(self, 'pending_settlement_text') and self.pending_settlement_text:
+                    # Check if settlement contains ending text
+                    if '触发结局' in self.pending_settlement_text or 'Trigger Ending' in self.pending_settlement_text:
+                        self._show_death_ending_black_screen(self.pending_settlement_text)
+                    else:
+                        self.manager.current_day += 1
+                        self.on_game_over()
+                else:
+                    self.manager.current_day += 1
+                    self.on_game_over()
         else:
             self.manager.current_day += 1
             self.show_current_level()
@@ -1915,6 +1981,13 @@ class GUIGameRunnerRedesigned:
             self.story_modal = None
             self.story_modal_open = False
         
+        # Save current game state before language switch
+        saved_mode = self.text_display_mode
+        saved_index = self.current_sentence_index
+        saved_day = self.manager.current_day
+        
+        print(f"[DEBUG] Language switch: saving state - day={saved_day}, mode={saved_mode}, index={saved_index}")
+        
         # Reload CSV data with new language
         self.csv_loader = CSVTextLoader(language=self.current_language)
         
@@ -1929,9 +2002,229 @@ class GUIGameRunnerRedesigned:
             if story_text:
                 self._show_story_modal(story_text)
         else:
-            # Refresh current level display
-            if self.manager.get_current_level():
-                self.show_current_level()
+            # Reload current day content in new language
+            current_day = self.manager.current_day
+            
+            # Load appropriate text based on saved mode
+            if saved_mode == 'narrative':
+                # Reload narrative text in new language
+                narrative = self.csv_loader.get_narrative(current_day)
+                self.current_text_sentences = self._split_into_sentences(narrative)
+                self.current_sentence_index = min(saved_index, len(self.current_text_sentences) - 1)
+                self.text_display_mode = 'narrative'
+                self._update_text_display()
+                
+                # Hide choice buttons
+                if hasattr(self, 'choice_button_windows'):
+                    for btn_window in self.choice_button_windows:
+                        self.canvas.itemconfig(btn_window, state='hidden')
+                for btn in self.choice_buttons:
+                    btn.config(state=tk.DISABLED)
+                    
+            elif saved_mode == 'choices':
+                # In choices mode - clear text and show choice buttons
+                self.text_display_mode = 'choices'
+                self.canvas.itemconfig(self.narrative_canvas_text, text="")
+                
+                # Show choice buttons with new language
+                options_dict = self.csv_loader.get_options(current_day)
+                for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
+                    option_text = options_dict.get(choice_key, choice_key)
+                    btn.config(text=option_text, state=tk.NORMAL)
+                    if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
+                        win_id = self.choice_button_windows[i]
+                        self.canvas.itemconfig(win_id, state='normal')
+                        self.canvas.tag_raise(win_id)
+                        
+            elif saved_mode == 'result':
+                # In result mode - reload result text for the last choice
+                if hasattr(self, 'last_choice') and self.last_choice:
+                    # Reload result text in new language
+                    result_text = self.csv_loader.get_result(current_day, self.last_choice)
+                    self.current_text_sentences = self._split_into_sentences(result_text)
+                    self.current_sentence_index = min(saved_index, len(self.current_text_sentences) - 1)
+                    self.text_display_mode = 'result'
+                    self._update_text_display()
+                    
+                    # Hide choice buttons
+                    if hasattr(self, 'choice_button_windows'):
+                        for btn_window in self.choice_button_windows:
+                            self.canvas.itemconfig(btn_window, state='hidden')
+                    for btn in self.choice_buttons:
+                        btn.config(state=tk.DISABLED)
+                else:
+                    # No choice saved - fallback to narrative
+                    narrative = self.csv_loader.get_narrative(current_day)
+                    self.current_text_sentences = self._split_into_sentences(narrative)
+                    self.current_sentence_index = 0
+                    self.text_display_mode = 'narrative'
+                    self._update_text_display()
+                    
+                    # Hide choice buttons
+                    if hasattr(self, 'choice_button_windows'):
+                        for btn_window in self.choice_button_windows:
+                            self.canvas.itemconfig(btn_window, state='hidden')
+                    for btn in self.choice_buttons:
+                        btn.config(state=tk.DISABLED)
+            elif saved_mode == 'result_before_ending':
+                # In result_before_ending mode - reload result text for the last choice
+                if hasattr(self, 'last_choice') and self.last_choice:
+                    # Reload result text in new language
+                    result_text = self.csv_loader.get_result(current_day, self.last_choice)
+                    self.current_text_sentences = self._split_into_sentences(result_text)
+                    self.current_sentence_index = min(saved_index, len(self.current_text_sentences) - 1)
+                    self.text_display_mode = 'result_before_ending'
+                    self._update_text_display()
+                    
+                    # Reload ending text in new language
+                    settlement_text = self.csv_loader.get_settlement(current_day, self.last_choice)
+                    if '触发结局：' in settlement_text or '触发结局:' in settlement_text or 'Trigger Ending' in settlement_text:
+                        ending_text = settlement_text
+                        for keyword in ['触发结局：', '触发结局:', 'Trigger Ending']:
+                            if keyword in settlement_text:
+                                parts = settlement_text.split(keyword, 1)
+                                if len(parts) > 1:
+                                    ending_text = keyword + parts[1].strip()
+                                break
+                        self.pending_ending_text = ending_text
+                    
+                    # Hide choice buttons
+                    if hasattr(self, 'choice_button_windows'):
+                        for btn_window in self.choice_button_windows:
+                            self.canvas.itemconfig(btn_window, state='hidden')
+                    for btn in self.choice_buttons:
+                        btn.config(state=tk.DISABLED)
+                else:
+                    # No choice saved - fallback to narrative
+                    narrative = self.csv_loader.get_narrative(current_day)
+                    self.current_text_sentences = self._split_into_sentences(narrative)
+                    self.current_sentence_index = 0
+                    self.text_display_mode = 'narrative'
+                    self._update_text_display()
+                    
+                    # Hide choice buttons
+                    if hasattr(self, 'choice_button_windows'):
+                        for btn_window in self.choice_button_windows:
+                            self.canvas.itemconfig(btn_window, state='hidden')
+                    for btn in self.choice_buttons:
+                        btn.config(state=tk.DISABLED)
+            elif saved_mode == 'transition':
+                # In transition mode - reload transition text in new language
+                # Transition happens after Day 5, before Day 6
+                # current_day should be 5 at this point
+                transition_day = 5  # The transition is after Day 5
+                transition_text = self.csv_loader.get_transition_text(transition_day)
+                
+                if transition_text:
+                    # Reload Day 56 background (transition uses special background)
+                    day56_path = "Day 56.PNG"
+                    if os.path.exists(day56_path):
+                        print(f"[DEBUG] Language switch: Loading Day 56 background")
+                        background_image = Image.open(day56_path)
+                        img_w, img_h = background_image.size
+                        if img_w > 0 and img_h > 0:
+                            cover_scale = max(self.display_width / img_w, self.display_height / img_h)
+                            cover_w = max(1, int(img_w * cover_scale))
+                            cover_h = max(1, int(img_h * cover_scale))
+                            resized = background_image.resize((cover_w, cover_h), Image.Resampling.LANCZOS)
+                            
+                            left = (cover_w - self.display_width) // 2
+                            top = (cover_h - self.display_height) // 2
+                            right = left + self.display_width
+                            bottom = top + self.display_height
+                            cropped = resized.crop((left, top, right, bottom))
+                            
+                            bg_rgb = cropped.convert('RGB')
+                            self.bg_photo = ImageTk.PhotoImage(bg_rgb)
+                            
+                            # Clear and recreate background
+                            self.canvas.delete("all")
+                            self.canvas.create_image(0, 0, image=self.bg_photo, anchor='nw')
+                            
+                            # Load DialogBox (needed for text display)
+                            dialog_box_path = "DialogBox.png"
+                            if os.path.exists(dialog_box_path):
+                                dialog_box = Image.open(dialog_box_path)
+                                box_width = int(dialog_box.width * self.scale)
+                                box_height = int(dialog_box.height * self.scale)
+                                dialog_box = dialog_box.resize((box_width, box_height), Image.Resampling.LANCZOS)
+                                self.dialog_box_photo = ImageTk.PhotoImage(dialog_box)
+                                x = self.display_width // 2
+                                y = self.display_height - (box_height // 2)
+                                self.canvas.create_image(x, y, image=self.dialog_box_photo, tags="dialogbox")
+                            
+                            # Recreate UI elements on top of new background
+                            self._create_ui_elements()
+                    
+                    # Reload transition text in new language
+                    self.current_text_sentences = self._split_into_sentences(transition_text)
+                    self.current_sentence_index = min(saved_index, len(self.current_text_sentences) - 1)
+                    self.text_display_mode = 'transition'
+                    self._update_text_display()
+                    
+                    # Hide choice buttons
+                    if hasattr(self, 'choice_button_windows'):
+                        for btn_window in self.choice_button_windows:
+                            self.canvas.itemconfig(btn_window, state='hidden')
+                    for btn in self.choice_buttons:
+                        btn.config(state=tk.DISABLED)
+                    
+                    print(f"[DEBUG] Language switch in transition mode: reloaded {len(self.current_text_sentences)} sentences at index {self.current_sentence_index}")
+                else:
+                    # No transition text found - fallback to showing current level
+                    print("[DEBUG] No transition text found, falling back to show_current_level")
+                    if self.manager.get_current_level():
+                        self.show_current_level()
+            elif saved_mode == 'death_ending_final':
+                # In death_ending_final mode - reload ending text in new language
+                if hasattr(self, 'current_ending_type') and hasattr(self, 'current_ending_text'):
+                    ending_type = self.current_ending_type
+                    
+                    # Get the appropriate ending text in new language
+                    if ending_type == 'stamina':
+                        # Stamina death ending
+                        ending_text = self.csv_loader.get_death_ending(0, 1)  # stamina=0, mana>0
+                    elif ending_type == 'mana':
+                        # Mana death ending
+                        ending_text = self.csv_loader.get_death_ending(1, 0)  # stamina>0, mana=0
+                    elif ending_type == 'both':
+                        # Both stats death ending
+                        ending_text = self.csv_loader.get_death_ending(0, 0)  # both=0
+                    elif ending_type == 'custom':
+                        # Custom ending (like Day 15) - need to re-extract from settlement
+                        # This is tricky because we don't know which day/choice triggered it
+                        # For now, keep the old text (can't translate custom endings dynamically)
+                        ending_text = None
+                        print("[DEBUG] Cannot translate custom ending - keeping original")
+                    else:
+                        ending_text = None
+                    
+                    if ending_text:
+                        # Reload death ending screen with new language text
+                        self._show_death_ending_black_screen(ending_text, ending_type)
+                        print(f"[DEBUG] Language switch in death_ending_final mode: reloaded {ending_type} ending")
+                    else:
+                        # Can't reload - keep current display
+                        print(f"[DEBUG] Cannot reload death ending in new language (type={ending_type})")
+                else:
+                    print("[DEBUG] No ending type/text saved, cannot reload death ending")
+            else:
+                # Default: show current level normally
+                if self.manager.get_current_level():
+                    self.show_current_level()
+            
+            # Update day label
+            if self.current_language == "中文":
+                day_text = f"第{number_to_chinese(current_day)}天"
+            else:
+                day_text = f"Day {current_day}"
+            self.canvas.itemconfig(self.day_text_id, text=day_text)
+            
+            # Update status displays with new language
+            self._update_status_display()
+            
+            # Ensure text is visible
+            self.window.after(10, self._ensure_text_visible)
         
         # Call callback if provided
         if self.on_language_change_callback:

@@ -1,7 +1,6 @@
 from typing import Tuple, List, Dict, Optional, Literal
 from abc import ABC, abstractmethod
 from game.state import GameState
-from game.i18n import get_i18n
 
 
 class Level(ABC):
@@ -20,7 +19,6 @@ class Level(ABC):
             language: Game language ('zh' or 'en')
         """
         self.language = language
-        self.i18n = get_i18n()
         self.current_scene = 0
     
     def get_title(self) -> str:
@@ -29,7 +27,7 @@ class Level(ABC):
         Returns:
             Localized title string
         """
-        return self.i18n.get(f'level{self.id}.title', self.title)
+        return self.title
     
     def get_narrative(self) -> str:
         """Get current scene narrative text.
