@@ -1,4 +1,4 @@
 from game.level import Level
-from game.levels.level1 import Level1
+from game.levels.csv_level import LevelFromCSV
 
-__all__ = ["Level1"]
+__all__ = ["Level", "LevelFromCSV"]

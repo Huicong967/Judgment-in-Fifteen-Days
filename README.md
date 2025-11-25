@@ -1,163 +1,176 @@
-# 《审判在十五天》- Judgment in Fifteen Days
+# Judgment in Fifteen Days
 
-一个独立图形界面的文本冒险游戏。你有 15 天时间在监狱中逃脱，需要通过三条路线之一达成目标。
+[![License](https://img.shields.io/badge/License-Personal_Project-blue.svg)](LICENSE.md)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Audio License](https://img.shields.io/badge/Audio-CC0-green.svg)](LICENSE.md#audio-assets)
 
-## 快速开始
+A standalone graphical text adventure game. You have 15 days to escape from prison by completing one of three routes.
+
+## Quick Start
 
 ```bash
 python start_game_new.py
 ```
 
-游戏将在 2 秒内启动，首先显示语言选择窗口（中文/English）。
+The game will launch within 2 seconds, first displaying a language selection window (中文/English).
 
-## 游戏特点
+## Game Features
 
-### 三条逃脱路线
+### Three Escape Routes
 
-| 路线 | 名称 | 描述 |
+| Route | Name | Description |
 |------|------|------|
-| 🤝 贿赂 | 贿路与交易 | 收买狱卒，消耗体力少 |
-| 🔨 破坏 | 破坏监狱设施 | 暗中破坏，消耗体力多 |
-| ⚖️ 法学 | 法学与文书 | 利用法律漏洞，消耗体力和魔力 |
+| 🤝 Bribe | Bribery & Trading | Bribe the guards, low stamina cost |
+| 🔨 Sabotage | Prison Destruction | Sabotage secretly, high stamina cost |
+| ⚖️ Legal | Law & Documentation | Exploit legal loopholes, costs stamina and mana |
 
-### UI 特性
+### Gameplay Mechanics
 
-- **四区域布局**: 左侧属性/道具、右侧背景图、下方叙述文本
-- **双语支持**: 完整的中文/英文本地化
-- **多语言就绪**: 易于扩展支持更多语言
-- **进度条显示**: 实时显示体力值(20/50)和魔力值(20/50)
-- **线索系统**: 真相线索按钮，点击显示游戏线索
-- **选择系统**: 清晰的 A/B/C 三选项界面
+- **Conditional Options**: Days 11, 12, and 14 have special requirements for certain choices
+  - Option A requires: Stamina ≥25 AND Mana ≥25 AND specific progress ≥3
+  - Option B requires: Stamina <25 OR Mana <25 OR specific progress <3
+  - Option C is always available
+- **Resource Management**: Balance stamina and mana consumption
+- **Multiple Endings**: Different outcomes based on your choices and progress
 
-## 文件结构
+### UI Features
+
+- **Four-Panel Layout**: Left panel for stats/inventory, right panel for backgrounds, bottom panel for narrative text
+- **Bilingual Support**: Complete Chinese/English localization
+- **Real-time Display**: Shows stamina (20/50) and mana (20/50) with progress bars
+- **Clue System**: Clues button to display collected game clues
+- **Choice System**: Clear A/B/C three-option interface
+- **Audio System**: Background music and click sound effects
+
+## Audio Credits
+
+The game includes audio resources under the CC0 license (commercial use allowed):
+
+- **Background Music**: "Eerie Piano Horror Suspense Music - Dark Nursery Rhyme"
+  - Source: [爱给网 - 诡异氛围钢琴恐怖悬疑配乐-暗黑童谣](https://www.aigei.com/item/gui_yi_fen_wei_211.html)
+  - License: CC0 (Public Domain)
+
+- **Click Sound Effect**: "Click - Button"
+  - Source: [爱给网 - click-点击-按钮](https://www.aigei.com/item/click_dian_ji_89.html)
+  - License: CC0 (Public Domain)
+
+## Project Structure
 
 ```
 Judgment in Fifteen Days/
-├── start_game_new.py              # 游戏启动脚本
+├── start_game_new.py              # Game launcher
 ├── game/
 │   ├── __init__.py
-│   ├── state.py                   # 游戏状态管理
-│   ├── level.py                   # 关卡基类
-│   ├── manager.py                 # 关卡管理器
-│   ├── image_manager.py           # 图片管理系统
-│   ├── runner_gui_new.py          # GUI 游戏运行器
-│   ├── gui/
+│   ├── state.py                   # Game state management
+│   ├── level.py                   # Level base class
+│   ├── manager.py                 # Level manager
+│   ├── runner_redesigned.py       # Main game runner
+│   ├── csv_text_loader.py         # CSV text loader
+│   ├── audio_manager.py           # Audio system manager
+│   ├── levels/
 │   │   ├── __init__.py
-│   │   ├── widgets_new.py         # 新 UI 组件库
-│   │   └── language_selector.py   # 语言选择窗口
-│   ├── i18n/
-│   │   ├── __init__.py            # i18n 管理器
-│   │   ├── zh.json                # 中文翻译
-│   │   └── en.json                # 英文翻译
-│   └── levels/
-│       ├── __init__.py
-│       └── level1.py              # 第一天关卡
-├── assets/                        # 游戏资源目录（准备就绪）
-└── UI_REFINEMENTS.md              # UI 细节调整文档
+│   │   └── csv_level.py           # CSV-based level definition
+│   ├── gui/
+│   │   └── __init__.py
+│   └── i18n/
+│       └── __init__.py
+├── Chinese Text.csv               # Chinese game content
+├── English Text.csv               # English game content
+├── BGM.mp3                        # Background music (CC0)
+├── click.mp3                      # Click sound effect (CC0)
+├── *.png                          # UI elements and backgrounds
+└── tools/                         # Development tools
 ```
 
-## 核心系统
+## Core Systems
 
-### 1. 状态管理 (`game/state.py`)
-- 属性: 体力(stamina)、魔力(mana)
-- 进度: 贿赂、破坏、法学三条路线
-- 物品栏: 收集线索和物品
+### 1. State Management (`game/state.py`)
+- Attributes: stamina, mana
+- Progress: bribe, sabotage, legal routes
+- Inventory: collect clues and items
 
-### 2. 关卡系统 (`game/level.py`, `game/levels/level1.py`)
-- 基类设计支持模板模式
-- 多语言支持通过 i18n
-- 选择系统: 每个关卡最多 3 个选择 (A/B/C)
+### 2. Level System (`game/level.py`, `game/levels/csv_level.py`)
+- CSV-based level data
+- Multilingual support
+- Choice system: up to 3 choices per level (A/B/C)
 
-### 3. 国际化系统 (`game/i18n/`)
-- 完整的 JSON 翻译系统
-- 支持简单的字符串格式化
-- 易于添加新语言或翻译
+### 3. CSV Text Loader (`game/csv_text_loader.py`)
+- Loads game content from CSV files
+- Supports language switching
+- Handles requirements checking for conditional choices
 
-### 4. 图片管理 (`game/image_manager.py`)
-- 自动占位符生成
-- 图片缓存机制
-- 支持多层合成
+### 4. Audio System (`game/audio_manager.py`)
+- Background music loop playback
+- Click sound effects
+- Volume control
+- Pygame-based implementation
 
-### 5. GUI 系统 (`game/gui/`)
-- PropertyPanel: 显示属性和进度
-- ImagePanel: 背景图和线索显示
-- NarrativePanel: 故事文本和选择
-- ResultWindow: 选择结果显示
+### 5. Game Runner (`game/runner_redesigned.py`)
+- Main game loop
+- UI rendering and event handling
+- Fullscreen support (F11 to toggle, ESC to exit)
+- Integrated audio playback
 
-## 双语本地化
+## Bilingual Localization
 
-所有 UI 文本都在 `game/i18n/` 目录的 JSON 文件中:
+Game content is stored in CSV files with columns for both Chinese and English text. The system automatically selects the appropriate language based on user choice.
 
-```json
-"ui": {
-  "stamina_label": "体力值",
-  "mana_label": "魔力值",
-  "bribe_full": "贿路与交易",
-  "sabotage_full": "破坏监狱设施",
-  "legal_full": "法学与文书",
-  "clues_button": "真相线索",
-  ...
-}
-```
+### CSV Structure
 
-### 添加新语言
+The CSV files contain:
+- Day number
+- Options (A/B/C) and their text
+- Result texts for each option
+- System settlement messages
+- Conditional requirements for special days
 
-1. 复制 `game/i18n/zh.json` 为 `game/i18n/xx.json`（xx 为语言代码）
-2. 翻译所有文本
-3. 在 `game/i18n/__init__.py` 中添加语言代码到 `SUPPORTED_LANGUAGES`
+## Development Guide
 
-## 开发指南
+### Adding New Content
 
-### 添加新关卡（第 2-15 天）
+Edit `Chinese Text.csv` and `English Text.csv` to add or modify:
+- Daily narratives
+- Choice options
+- Result texts
+- Settlement messages
 
-1. 在 `game/levels/` 中创建 `level2.py`:
-   ```python
-   from game.level import Level
-   from game.i18n import get_i18n
-   
-   class Level2(Level):
-       def __init__(self):
-           super().__init__(2)
-       
-       def play(self, state):
-           i18n = get_i18n()
-           # 返回 scene, options, results
-   ```
+### Adding Images
 
-2. 在 `game/i18n/zh.json` 和 `en.json` 中添加关卡数据:
-   ```json
-   "level2": {
-     "scene": "...",
-     "options": { "A": {...}, "B": {...}, "C": {...} },
-     "results": { "A": {...}, "B": {...}, "C": {...} }
-   }
-   ```
+1. Place images in the root directory
+2. Follow naming convention: `Day X.PNG` for backgrounds
+3. UI elements: `DialogBox.png`, `option.png`, etc.
 
-### 添加游戏图片
-
-1. 将图片放在 `assets/level1/`, `assets/level2/` 等目录
-2. 在关卡代码中调用:
-   ```python
-   image = image_manager.get_background('level1_intro')
-   ```
-
-## 技术栈
+## Technical Stack
 
 - **Python 3.10+**
-- **Tkinter** (标准库 GUI)
-- **Pillow** (图片处理)
-- **JSON** (数据存储和本地化)
+- **Tkinter** (Standard library GUI)
+- **Pillow** (Image processing)
+- **Pygame** (Audio playback)
+- **CSV** (Data storage and localization)
 
-## 系统要求
+## System Requirements
 
-- Python 3.10 或更高版本
+- Python 3.10 or higher
 - Windows/Mac/Linux
-- 最小屏幕分辨率: 1600×1000
+- Minimum screen resolution: 1920×1080
+- Required packages: Pillow, pygame
 
-## 许可证
+## Installation
 
-个人项目
+```bash
+# Install required packages
+pip install Pillow pygame
 
-## 联系方式
+# Run the game
+python start_game_new.py
+```
 
-有问题？查看 `UI_REFINEMENTS.md` 获取最新的 UI 调整详情。
+## License
+
+Personal project.
+
+Audio resources are licensed under CC0 (Public Domain), allowing commercial use.
+
+## Contact
+
+For questions or issues, please check the documentation files in the repository.

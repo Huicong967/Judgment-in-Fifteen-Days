@@ -1,8 +1,6 @@
 from typing import Dict, List, Optional
 from game.state import GameState
 from game.level import Level
-from game.levels.level1 import Level1
-from game.levels.generic_level import LevelFromI18n
 from game.levels.csv_level import LevelFromCSV
 
 class LevelManager:
@@ -10,26 +8,20 @@ class LevelManager:
     管理游戏流程：15 天倒计时、关卡序列、胜负判定。
     """
     def __init__(self):
-        # Initialize levels dynamically from i18n for days 1..max_days
-        self.levels: Dict[int, Level] = {
-            1: Level1(),
-        }
-        # add generic levels for 2..15 if present in i18n
-        for day in range(2, 16):
-            # prefer CSV-defined levels if available, else fallback to i18n
+        # Initialize levels dynamically from CSV
+        self.levels: Dict[int, Level] = {}
+        
+        # Load all levels from CSV (days 1-15)
+        for day in range(1, 16):
             try:
                 lvl = LevelFromCSV(day)
                 # only use if CSV actually contains the day
                 if lvl and lvl.get_narrative():
                     self.levels[day] = lvl
-                    continue
-            except Exception:
-                pass
-            try:
-                self.levels[day] = LevelFromI18n(day)
             except Exception:
                 # ignore if creation fails
                 pass
+        
         self.current_day = 1
         self.max_days = 15
         self.state = GameState()

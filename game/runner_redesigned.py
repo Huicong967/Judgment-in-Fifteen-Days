@@ -10,6 +10,7 @@ from game.levels.csv_level import get_special_text, LevelFromCSV
 from game.manager import LevelManager
 from game.state import GameState
 from game.csv_text_loader import CSVTextLoader
+from game.audio_manager import AudioManager
 
 
 def number_to_chinese(num):
@@ -84,6 +85,9 @@ class GUIGameRunnerRedesigned:
         # CSV text loader
         self.csv_loader = CSVTextLoader(language=self.current_language)
         
+        # Audio manager
+        self.audio_manager = AudioManager()
+        
         # Initialize scale and dimensions
         self.scale = 1.0
         self.display_width = 1920
@@ -149,17 +153,49 @@ class GUIGameRunnerRedesigned:
         # Result popup elements
         self.result_popup = None
         self.result_label = None
-        
         # Bind resize event
         self.window.bind('<Configure>', self._on_window_resize)
         # Fullscreen toggle: F11 to toggle, Esc to exit
         self.window.bind('<F11>', lambda e: self.toggle_fullscreen())
         self.window.bind('<Escape>', lambda e: self.exit_fullscreen())
         
+        # Setup UI
         self._setup_ui()
     
-    def _create_button_image(self, image_path: str, text: str, scale_factor: float = 1.0) -> ImageTk.PhotoImage:
-        """Create a button image with text overlay."""
+    def cleanup(self):
+        """Clean up resources when game ends."""
+        if hasattr(self, 'audio_manager'):
+            self.audio_manager.cleanup()
+    
+    def _play_click_sound(self):
+        """Play click sound effect."""
+        if hasattr(self, 'audio_manager'):
+            self.audio_manager.play_click()
+    
+    def _wrap_with_click_sound(self, callback):
+        """Wrap a callback function to play click sound before execution.
+        
+        Args:
+            callback: The original callback function
+            
+        Returns:
+            A new function that plays click sound then calls the callback
+        """
+        def wrapped(*args, **kwargs):
+            self._play_click_sound()
+            if callback:
+                return callback(*args, **kwargs)
+        return wrapped
+    
+    def _create_button_image(self, image_path: str, text: str, scale_factor: float = 1.0, button_type: str = "normal") -> ImageTk.PhotoImage:
+        """Create a button image with text overlay.
+        
+        Args:
+            image_path: Path to button background image
+            text: Text to display on button
+            scale_factor: Scale factor for button size
+            button_type: Type of button ('normal', 'tools', 'clues') for different font sizes
+        """
         if not os.path.exists(image_path):
             # Fallback: create a simple colored button
             img = Image.new('RGBA', (200, 60), color=(100, 100, 100, 255))
@@ -176,11 +212,18 @@ class GUIGameRunnerRedesigned:
         
         # Try to use a nice font, fallback to default
         try:
-            font_size = int(20 * self.scale)  # Increased from 16 to 20
+            # Adjust font size based on button type
+            if button_type in ["tools", "clues"]:
+                font_size = int(19 * self.scale)  # Smaller by 1 for tools/clues buttons
+            else:
+                font_size = int(20 * self.scale)  # Normal size for other buttons
             font = ImageFont.truetype("msyh.ttc", font_size)  # Microsoft YaHei
         except:
             try:
-                font = ImageFont.truetype("arial.ttf", int(18 * self.scale))  # Increased from 14 to 18
+                if button_type in ["tools", "clues"]:
+                    font = ImageFont.truetype("arial.ttf", int(17 * self.scale))
+                else:
+                    font = ImageFont.truetype("arial.ttf", int(18 * self.scale))
             except:
                 font = ImageFont.load_default()
         
@@ -470,6 +513,7 @@ class GUIGameRunnerRedesigned:
         
         # Progress labels (using canvas text for transparent background)
         progress_y = status_y_start + int(70 * s)
+        
         bribe_text = f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
         self.bribe_text_id = self.canvas.create_text(
             status_x,
@@ -500,11 +544,13 @@ class GUIGameRunnerRedesigned:
             anchor=tk.W
         )
         
+        # Mystery progress (?) - only show when mystery_progress >= 1
+        show_mystery = state.mystery_progress >= 1
         mystery_text = f"?: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}"
         self.mystery_text_id = self.canvas.create_text(
             status_x,
             progress_y + int(105 * s),
-            text=mystery_text,
+            text=mystery_text if show_mystery else "",
             font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
             fill="white",
             anchor=tk.W
@@ -519,14 +565,14 @@ class GUIGameRunnerRedesigned:
         clues_text = "线索" if self.current_language == "中文" else "Clues"
         
         # Scale buttons to 1/4 of original size
-        self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.25)
-        self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25)
+        self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.25, button_type="tools")
+        self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25, button_type="clues")
         
         # Tools button
         self.tools_button = tk.Button(
             self.window,
             image=self.tools_btn_photo,
-            command=self.show_tools,
+            command=self._wrap_with_click_sound(self.show_tools),
             borderwidth=0,
             highlightthickness=0,
             bg="black",
@@ -538,7 +584,7 @@ class GUIGameRunnerRedesigned:
         self.clues_button = tk.Button(
             self.window,
             image=self.clues_btn_photo,
-            command=self.show_clues,
+            command=self._wrap_with_click_sound(self.show_clues),
             borderwidth=0,
             highlightthickness=0,
             bg="black",
@@ -563,7 +609,7 @@ class GUIGameRunnerRedesigned:
         self.lang_button = tk.Button(
             self.window,
             image=self.lang_btn_photo,
-            command=self.toggle_language,
+            command=self._wrap_with_click_sound(self.toggle_language),
             borderwidth=0,
             highlightthickness=0,
             bg="black",
@@ -608,7 +654,7 @@ class GUIGameRunnerRedesigned:
                 text="",
                 compound='center',
                 font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
-                command=lambda choice=label: self.on_choice_selected(choice),
+                command=lambda choice=label: self._wrap_with_click_sound(lambda: self.on_choice_selected(choice))(),
                 borderwidth=0,
                 highlightthickness=0,
                 bg="black",
@@ -710,12 +756,14 @@ class GUIGameRunnerRedesigned:
     
     def prev_sentence(self):
         """Navigate to previous sentence."""
+        self._play_click_sound()
         if self.current_sentence_index > 0:
             self.current_sentence_index -= 1
             self._update_text_display()
     
     def next_sentence(self):
         """Navigate to next sentence."""
+        self._play_click_sound()
         print(f"[DEBUG] next_sentence: current_index={self.current_sentence_index}, total={len(self.current_text_sentences)}, mode={self.text_display_mode}")
         
         if self.current_sentence_index < len(self.current_text_sentences) - 1:
@@ -730,10 +778,28 @@ class GUIGameRunnerRedesigned:
             # Finished result text, show settlement modal
             print("[DEBUG] Reached end of result, calling _show_settlement_modal()")
             self._show_settlement_modal()
+        elif self.text_display_mode == 'result_before_ending':
+            # Finished result text, now show ending text on black screen
+            print("[DEBUG] Reached end of result, transitioning to death ending")
+            if hasattr(self, 'pending_ending_text'):
+                self._show_death_ending_black_screen(self.pending_ending_text)
+            else:
+                print("[ERROR] No pending_ending_text found!")
         elif self.text_display_mode == 'transition':
             # Finished transition text, proceed to next day (Day 6)
             print("[DEBUG] Reached end of transition, proceeding to Day 6")
             self._proceed_to_day6()
+        elif self.text_display_mode == 'death_ending':
+            # Finished death ending text, transition to black screen with white text
+            print("[DEBUG] Reached end of death ending text, transitioning to black screen")
+            # Get the full ending text
+            full_ending_text = '\n'.join(self.current_text_sentences)
+            # Clear and show black screen with ending
+            self._show_death_ending_black_screen(full_ending_text)
+        elif self.text_display_mode == 'death_ending_final':
+            # Already on black screen, just show restart button
+            print("[DEBUG] Reached end of black screen death ending, showing restart button")
+            self._show_restart_button_on_death()
         else:
             print(f"[DEBUG] next_sentence: no action taken (mode={self.text_display_mode})")
     
@@ -813,9 +879,28 @@ class GUIGameRunnerRedesigned:
         
         # Add the settlement text from CSV if available
         if hasattr(self, 'pending_settlement_text') and self.pending_settlement_text:
-            settlement_lines.append("")
-            settlement_lines.append(self.pending_settlement_text)
-            settlement_lines.append("")
+            csv_text = self.pending_settlement_text.strip()
+            
+            # Split by lines and filter out item/clue section headers only
+            lines = csv_text.split('\n')
+            filtered_lines = []
+            for line in lines:
+                stripped = line.strip()
+                # Skip empty lines
+                if not stripped:
+                    continue
+                # Skip ONLY the standalone section headers (not the "获得道具：" lines)
+                if stripped in ["持有道具：", "Items:", "持有线索：", "Clues:"]:
+                    continue
+                # Keep all other lines including "获得道具：XXX" and "获得线索：XXX"
+                filtered_lines.append(line)
+            
+            csv_text = '\n'.join(filtered_lines).strip()
+            
+            if csv_text:  # Only add if there's content left
+                settlement_lines.append("")
+                settlement_lines.append(csv_text)
+                settlement_lines.append("")
         
         # Add current stats
         settlement_lines.append("-" * 30)
@@ -824,29 +909,51 @@ class GUIGameRunnerRedesigned:
                      else f"Stamina: {state.stamina}/{state.max_stamina}"))
         settlement_lines.append((f"魔力值: {state.mana}/{state.max_mana}" if self.current_language == "中文" 
                      else f"Mana: {state.mana}/{state.max_mana}"))
+        
+        # Normal progress always shown
         settlement_lines.append(f"贿赂进度: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}")
         settlement_lines.append(f"破坏进度: {state.sabotage_progress}" if self.current_language == "中文" else f"Sabotage: {state.sabotage_progress}")
         settlement_lines.append(f"法学进度: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}")
-        settlement_lines.append(f"?进度: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}")
         
-        if state.inventory:
-            settlement_lines.append("")
-            settlement_lines.append("持有道具：" if self.current_language == "中文" else "Items:")
-            for item in state.inventory:
-                settlement_lines.append(f"  • {item}")
+        # Mystery progress (?) - only show when mystery_progress >= 1
+        if state.mystery_progress >= 1:
+            settlement_lines.append(f"?进度: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}")
         
-        if state.clues:
-            settlement_lines.append("")
-            settlement_lines.append("持有线索：" if self.current_language == "中文" else "Clues:")
-            for clue in state.clues:
-                settlement_lines.append(f"  • {clue}")
+        # DEBUG: Print inventory and clues state
+        print(f"[SETTLEMENT DEBUG] Day {state.stamina}, Inventory: {state.inventory}, Clues: {state.clues}")
+        print(f"[SETTLEMENT DEBUG] Inventory check: {state.inventory and any(item.strip() for item in state.inventory)}")
+        print(f"[SETTLEMENT DEBUG] Clues check: {state.clues and any(clue.strip() for clue in state.clues)}")
+        
+        # REMOVED: Don't show "持有道具：" section - items are already shown in CSV text as "获得道具：XXX"
+        # if state.inventory and any(item.strip() for item in state.inventory):
+        #     settlement_lines.append("")
+        #     settlement_lines.append("持有道具：" if self.current_language == "中文" else "Items:")
+        #     for item in state.inventory:
+        #         if item.strip():  # Only show non-empty items
+        #             settlement_lines.append(f"  • {item}")
+        #             print(f"[SETTLEMENT DEBUG] Adding item to display: {repr(item)}")
+        
+        # REMOVED: Don't show "持有线索：" section - clues are already shown in CSV text as "获得线索：XXX"
+        # if state.clues and any(clue.strip() for clue in state.clues):
+        #     settlement_lines.append("")
+        #     settlement_lines.append("持有线索：" if self.current_language == "中文" else "Clues:")
+        #     for clue in state.clues:
+        #         if clue.strip():  # Only show non-empty clues
+        #             settlement_lines.append(f"  • {clue}")
+        #             print(f"[SETTLEMENT DEBUG] Adding clue to display: {repr(clue)}")
         
         settlement_text = "\n".join(settlement_lines)
+        
+        # DEBUG: Print final settlement text
+        print(f"[SETTLEMENT DEBUG] Final settlement text:")
+        print("=" * 50)
+        print(settlement_text)
+        print("=" * 50)
         
         # Create modal
         modal = tk.Toplevel(self.window)
         modal.title("系统结算" if self.current_language == "中文" else "Settlement")
-        modal.geometry("700x400")
+        modal.geometry("700x430")
         modal.configure(bg="black")
         modal.transient(self.window)
         modal.grab_set()
@@ -854,8 +961,8 @@ class GUIGameRunnerRedesigned:
         # Center the modal
         modal.update_idletasks()
         x = (self.window.winfo_screenwidth() // 2) - (700 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (400 // 2)
-        modal.geometry(f"700x400+{x}+{y}")
+        y = (self.window.winfo_screenheight() // 2) - (430 // 2)
+        modal.geometry(f"700x430+{x}+{y}")
         
         # Settlement text
         text_widget = tk.Text(
@@ -874,17 +981,18 @@ class GUIGameRunnerRedesigned:
         
         # Continue button
         def on_continue():
+            self._play_click_sound()
             modal.destroy()
             self.continue_game()
         
-        print(f"[DEBUG] Creating continue button with square size")
+        print(f"[DEBUG] Creating continue button with enlarged size")
         continue_btn = tk.Button(
             modal,
             text="继续" if self.current_language == "中文" else "Continue",
-            font=tkfont.Font(family="微软雅黑", size=8),
+            font=tkfont.Font(family="微软雅黑", size=9),  # Reduced to 9 to fit completely
             command=on_continue,
-            width=6,
-            height=2
+            width=8,  # Increased width from 6 to 8
+            height=3
         )
         continue_btn.pack(pady=10)
         
@@ -899,6 +1007,8 @@ class GUIGameRunnerRedesigned:
     
     def start_game(self):
         """Start the game by showing story background modal, then first level."""
+        # Start background music
+        self.audio_manager.start_bgm()
         # First, do a quick fullscreen refresh cycle before showing story
         self.window.after(100, self._initial_fullscreen_refresh)
     
@@ -967,6 +1077,7 @@ class GUIGameRunnerRedesigned:
         
         # Confirm button
         def on_confirm():
+            self._play_click_sound()
             self.story_modal_open = False
             self.story_modal = None
             modal.destroy()
@@ -975,6 +1086,7 @@ class GUIGameRunnerRedesigned:
         
         # Handle modal close
         def on_close():
+            self._play_click_sound()
             self.story_modal_open = False
             self.story_modal = None
             modal.destroy()
@@ -1115,7 +1227,7 @@ class GUIGameRunnerRedesigned:
         mana_text = f"魔力值: {state.mana}" if self.current_language == "中文" else f"Mana: {state.mana}"
         self.canvas.itemconfig(self.mana_text_id, text=mana_text)
         
-        # Update progress
+        # Update progress (normal progress always visible)
         bribe_text = f"贿赂: {state.bribe_progress}" if self.current_language == "中文" else f"Bribe: {state.bribe_progress}"
         self.canvas.itemconfig(self.bribe_text_id, text=bribe_text)
         
@@ -1125,12 +1237,83 @@ class GUIGameRunnerRedesigned:
         legal_text = f"法学: {state.legal_progress}" if self.current_language == "中文" else f"Legal: {state.legal_progress}"
         self.canvas.itemconfig(self.legal_text_id, text=legal_text)
         
+        # Mystery progress (?) - only show when mystery_progress >= 1
+        show_mystery = state.mystery_progress >= 1
         mystery_text = f"?: {state.mystery_progress}" if self.current_language == "中文" else f"?: {state.mystery_progress}"
-        self.canvas.itemconfig(self.mystery_text_id, text=mystery_text)
+        self.canvas.itemconfig(self.mystery_text_id, text=mystery_text if show_mystery else "")
+    
+    def _show_requirements_warning(self, unmet_conditions: list):
+        """Show modal warning when player doesn't meet requirements."""
+        import tkinter.font as tkfont
+        
+        modal = tk.Toplevel(self.window)
+        modal.title("条件不足" if self.current_language == "中文" else "Requirements Not Met")
+        modal.geometry("500x300")
+        modal.configure(bg="black")
+        modal.transient(self.window)
+        modal.grab_set()
+        
+        # Center the modal
+        modal.update_idletasks()
+        x = (self.window.winfo_screenwidth() // 2) - (500 // 2)
+        y = (self.window.winfo_screenheight() // 2) - (300 // 2)
+        modal.geometry(f"500x300+{x}+{y}")
+        
+        # Title
+        title_text = "选项条件不足" if self.current_language == "中文" else "Requirements Not Met"
+        title_label = tk.Label(
+            modal,
+            text=title_text,
+            font=tkfont.Font(family="微软雅黑", size=16, weight="bold"),
+            bg="black",
+            fg="red"
+        )
+        title_label.pack(pady=20)
+        
+        # Message
+        msg_text = "您需要满足以下条件才能选择此选项：" if self.current_language == "中文" else "You need to meet the following requirements:"
+        msg_label = tk.Label(
+            modal,
+            text=msg_text,
+            font=tkfont.Font(family="微软雅黑", size=12),
+            bg="black",
+            fg="white"
+        )
+        msg_label.pack(pady=10)
+        
+        # Unmet conditions list
+        conditions_text = "\n".join([f"• {cond}" for cond in unmet_conditions])
+        conditions_label = tk.Label(
+            modal,
+            text=conditions_text,
+            font=tkfont.Font(family="微软雅黑", size=11),
+            bg="black",
+            fg="yellow",
+            justify=tk.LEFT
+        )
+        conditions_label.pack(pady=10)
+        
+        # Close button
+        close_btn = tk.Button(
+            modal,
+            text="确定" if self.current_language == "中文" else "OK",
+            font=tkfont.Font(family="微软雅黑", size=12),
+            command=self._wrap_with_click_sound(modal.destroy),
+            width=10,
+            height=2
+        )
+        close_btn.pack(pady=20)
     
     def on_choice_selected(self, choice: str):
         """Handle choice selection."""
         current_day = self.manager.current_day
+        
+        # Check if player meets requirements for this day and choice (only for days 11, 12, 14 options A/B)
+        meets_reqs, unmet_conditions = self.csv_loader.check_requirements(current_day, choice, self.manager.state)
+        if not meets_reqs:
+            # Show warning modal with unmet conditions
+            self._show_requirements_warning(unmet_conditions)
+            return  # Don't proceed with choice
         
         # Hide choice buttons after selection
         if hasattr(self, 'choice_button_windows'):
@@ -1144,24 +1327,49 @@ class GUIGameRunnerRedesigned:
         
         # Get settlement data from CSV and parse it
         settlement_text = self.csv_loader.get_settlement(current_day, choice)
-        settlement_data = self.csv_loader.parse_settlement(settlement_text)
         
-        # Apply changes to game state
-        state = self.manager.state
-        state.apply_change(
-            stamina_delta=settlement_data['stamina_change'],
-            mana_delta=settlement_data['mana_change'],
-            bribe_delta=settlement_data['bribe_change'],
-            sabotage_delta=settlement_data['sabotage_change'],
-            legal_delta=settlement_data['legal_change'],
-            mystery_delta=settlement_data['mystery_change'],
-            add_items=settlement_data['items_gained'],
-            add_clues=settlement_data['clues_gained'],
-            remove_items=[]
-        )
+        # Check if settlement text contains death/ending keywords
+        death_keywords = ['触发结局：', '触发结局:', '游戏结束', '火刑', '判定死亡', 'Game Over', 'THE END', 'death ending', 'Ending:']
+        is_death_ending = any(keyword in settlement_text for keyword in death_keywords)
         
-        # Store settlement text for display later
-        self.pending_settlement_text = settlement_text
+        if is_death_ending:
+            print(f"[DEBUG] Death ending detected in settlement text!")
+            # Extract ending text after "触发结局：" keyword
+            ending_text = settlement_text
+            for keyword in ['触发结局：', '触发结局:']:
+                if keyword in settlement_text:
+                    # Get everything after the keyword
+                    parts = settlement_text.split(keyword, 1)
+                    if len(parts) > 1:
+                        ending_text = keyword + parts[1].strip()
+                    break
+            
+            print(f"[DEBUG] Extracted ending text: {ending_text[:100]}...")
+            # Store the ending text to show AFTER result text
+            self.pending_ending_text = ending_text
+            # Set mode to show result first, then ending
+            self.text_display_mode = 'result_before_ending'
+        else:
+            # Normal result mode - parse settlement and apply changes
+            settlement_data = self.csv_loader.parse_settlement(settlement_text)
+            
+            # Apply changes to game state
+            state = self.manager.state
+            state.apply_change(
+                stamina_delta=settlement_data['stamina_change'],
+                mana_delta=settlement_data['mana_change'],
+                bribe_delta=settlement_data['bribe_change'],
+                sabotage_delta=settlement_data['sabotage_change'],
+                legal_delta=settlement_data['legal_change'],
+                mystery_delta=settlement_data['mystery_change'],
+                add_items=settlement_data['items_gained'],
+                add_clues=settlement_data['clues_gained'],
+                remove_items=[]
+            )
+            
+            # Store settlement text for display later
+            self.pending_settlement_text = settlement_text
+            self.text_display_mode = 'result'
         
         # Update status display
         self._update_status_display()
@@ -1169,36 +1377,37 @@ class GUIGameRunnerRedesigned:
         # Split result text into sentences and start displaying
         self.current_text_sentences = self._split_into_sentences(result_text)
         self.current_sentence_index = 0
-        self.text_display_mode = 'result'
         self._update_text_display()
         
-        # Check for special settlement cases (negative stamina/mana)
-        if state.stamina < 0 or state.mana < 0:
-            special_key = None
-            if state.stamina < 0 and state.mana < 0:
-                special_key = '体力值魔力值同时≤0' if self.current_language == "中文" else 'Stamina Value Magic Value ≤ 0'
-            elif state.stamina < 0:
-                special_key = '体力值≤0' if self.current_language == "中文" else 'Stamina value ≤ 0'
-            elif state.mana < 0:
-                special_key = '魔力值≤0' if self.current_language == "中文" else 'Magic value ≤ 0'
-            
-            if special_key:
-                special_text = get_special_text(special_key, self.current_language)
-                if special_text:
-                    # Show special end dialog after result display finishes
-                    # For now, show immediately
-                    action = self._show_special_end_dialog(special_text)
-                    if action == 'retry':
-                        # Reset game state and restart from day 1
-                        self.manager.state = GameState()
-                        self.manager.current_day = 1
-                        self.show_current_level()
-                    elif action == 'quit':
-                        # Exit the game
-                        self.window.destroy()
-                        import sys
-                        sys.exit(0)
-                    return
+        # Check for special settlement cases (negative stamina/mana) - only if not death ending
+        if not is_death_ending:
+            state = self.manager.state
+            if state.stamina < 0 or state.mana < 0:
+                special_key = None
+                if state.stamina < 0 and state.mana < 0:
+                    special_key = '体力值魔力值同时≤0' if self.current_language == "中文" else 'Stamina Value Magic Value ≤ 0'
+                elif state.stamina < 0:
+                    special_key = '体力值≤0' if self.current_language == "中文" else 'Stamina value ≤ 0'
+                elif state.mana < 0:
+                    special_key = '魔力值≤0' if self.current_language == "中文" else 'Magic value ≤ 0'
+                
+                if special_key:
+                    special_text = get_special_text(special_key, self.current_language)
+                    if special_text:
+                        # Show special end dialog after result display finishes
+                        # For now, show immediately
+                        action = self._show_special_end_dialog(special_text)
+                        if action == 'retry':
+                            # Reset game state and restart from day 1
+                            self.manager.state = GameState()
+                            self.manager.current_day = 1
+                            self.show_current_level()
+                        elif action == 'quit':
+                            # Exit the game
+                            self.window.destroy()
+                            import sys
+                            sys.exit(0)
+                        return
     
     def _show_result_popup(self, result_text: str):
         """Show result popup after choice."""
@@ -1234,7 +1443,7 @@ class GUIGameRunnerRedesigned:
             self.result_popup,
             text="关闭" if self.current_language == "中文" else "Close",
             font=tkfont.Font(family="微软雅黑", size=12),
-            command=self.result_popup.destroy
+            command=self._wrap_with_click_sound(self.result_popup.destroy)
         )
         close_btn.pack(pady=10)
     
@@ -1275,10 +1484,12 @@ class GUIGameRunnerRedesigned:
         btn_frame.pack(pady=20)
         
         def on_retry():
+            self._play_click_sound()
             result['action'] = 'retry'
             modal.destroy()
         
         def on_quit():
+            self._play_click_sound()
             result['action'] = 'quit'
             modal.destroy()
         
@@ -1392,6 +1603,133 @@ class GUIGameRunnerRedesigned:
         
         print("[DEBUG] Day56 screen setup complete")
     
+    def _show_death_ending(self, ending_text: str):
+        """Display death ending on full black background with white text.
+        
+        Args:
+            ending_text: The ending text to display (from stamina/mana <= 0)
+        """
+        print(f"[DEBUG] Showing death ending screen (from stats)")
+        
+        # Clear entire canvas to black
+        self.canvas.delete("all")
+        self.canvas.configure(bg="black")
+        
+        # Split ending text into sentences for progressive display
+        sentences = [s.strip() for s in ending_text.split('\n') if s.strip()]
+        self.current_text_sentences = sentences
+        self.current_sentence_index = 0
+        self.text_display_mode = 'death_ending_final'
+        
+        # Calculate text position (center of screen)
+        text_x = self.display_width // 2
+        text_y = self.display_height // 2
+        
+        # Use same font size as day number display (18)
+        text_size = int(18 * self.scale)
+        text_font = tkfont.Font(family="微软雅黑", size=text_size)
+        
+        # Create white text on black background with wraplength
+        max_width = int(800 * self.scale)
+        self.narrative_canvas_text = self.canvas.create_text(
+            text_x, text_y,
+            text=sentences[0] if sentences else ending_text,
+            fill="white",
+            font=text_font,
+            width=max_width,
+            justify="left",
+            tags="death_ending_text"
+        )
+        
+        # Add navigation arrows if there are multiple sentences
+        if len(sentences) > 1:
+            self._add_navigation_arrows()
+        else:
+            # If only one screen of text, add a "重新开始" button after a moment
+            self.window.after(2000, self._show_restart_button_on_death)
+        
+        print(f"[DEBUG] Death ending displayed with {len(sentences)} sentences")
+    
+    def _show_restart_button_on_death(self):
+        """Show restart button on death ending screen."""
+        button_x = self.display_width // 2
+        button_y = int(self.display_height * 0.9)
+        
+        # Create restart button
+        restart_text = "重新开始" if self.current_language == "中文" else "Restart"
+        button_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
+        
+        # Create button background
+        button_bg = self.canvas.create_rectangle(
+            button_x - 80, button_y - 25,
+            button_x + 80, button_y + 25,
+            fill="#333333",
+            outline="white",
+            tags="restart_button"
+        )
+        
+        # Create button text
+        button_text_id = self.canvas.create_text(
+            button_x, button_y,
+            text=restart_text,
+            fill="white",
+            font=button_font,
+            tags="restart_button"
+        )
+        
+        # Bind click event to restart game
+        def restart_game(event):
+            print("[DEBUG] Restarting game...")
+            # Reset game state
+            from game.state import GameState
+            self.manager.state = GameState()
+            self.manager.current_day = 1
+            # Clear canvas and restart
+            self.canvas.delete("all")
+            self._load_background_for_day(1)
+            self._create_ui_elements()
+            self.show_current_level()
+        
+        self.canvas.tag_bind("restart_button", "<Button-1>", restart_game)
+    
+    def _show_death_ending_black_screen(self, ending_text: str):
+        """Transition from normal game screen to black screen death ending.
+        
+        Args:
+            ending_text: The ending text to display on black background
+        """
+        print(f"[DEBUG] Transitioning to black screen death ending")
+        print(f"[DEBUG] Ending text: {ending_text[:200]}...")
+        
+        # Clear entire canvas to black
+        self.canvas.delete("all")
+        self.canvas.configure(bg="black")
+        
+        # Calculate text position (center of screen, slightly above center)
+        text_x = self.display_width // 2
+        text_y = self.display_height // 2 - int(50 * self.scale)
+        
+        # Use same font size as day number display (18)
+        text_size = int(18 * self.scale)
+        text_font = tkfont.Font(family="微软雅黑", size=text_size)
+        
+        # Create white text on black background with wraplength
+        max_width = int(800 * self.scale)
+        self.narrative_canvas_text = self.canvas.create_text(
+            text_x, text_y,
+            text=ending_text,
+            fill="white",
+            font=text_font,
+            width=max_width,
+            justify="left",
+            tags="death_ending_text"
+        )
+        
+        # Show restart button after a brief delay
+        self.window.after(1000, self._show_restart_button_on_death)
+        
+        print(f"[DEBUG] Black screen death ending displayed")
+    
     def _proceed_to_day6(self):
         """Proceed to Day 6 after Day 56 screen."""
         self.manager.current_day = 6
@@ -1428,27 +1766,95 @@ class GUIGameRunnerRedesigned:
         state = self.manager.state
         # Use inventory as source for tools/items
         tools = state.inventory or []
-        tools_list = "\n".join(tools) if tools else ("无道具" if self.current_language == "中文" else "No tools")
         
         popup = tk.Toplevel(self.window)
         popup.title("道具" if self.current_language == "中文" else "Tools")
-        popup.geometry("400x300")
+        popup.geometry("450x350")
         popup.configure(bg="white")
         popup.transient(self.window)
         
         # Center the popup
         popup.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (400 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (300 // 2)
-        popup.geometry(f"400x300+{x}+{y}")
+        x = (self.window.winfo_screenwidth() // 2) - (450 // 2)
+        y = (self.window.winfo_screenheight() // 2) - (350 // 2)
+        popup.geometry(f"450x350+{x}+{y}")
         
-        text_widget = tk.Text(popup, width=40, height=15, font=tkfont.Font(family="微软雅黑", size=12))
-        text_widget.pack(padx=10, pady=10)
-        text_widget.insert("1.0", tools_list)
-        text_widget.config(state=tk.DISABLED)
+        # Create frame for items
+        frame = tk.Frame(popup, bg="white")
+        frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
         
-        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", command=popup.destroy)
+        if not tools:
+            no_tools_label = tk.Label(frame, text="无道具" if self.current_language == "中文" else "No tools",
+                                     font=tkfont.Font(family="微软雅黑", size=12), bg="white")
+            no_tools_label.pack(pady=20)
+        else:
+            # Display each tool with use button if applicable
+            for tool in tools:
+                tool_frame = tk.Frame(frame, bg="white")
+                tool_frame.pack(fill=tk.X, pady=5, padx=5)
+                
+                tool_label = tk.Label(tool_frame, text=tool, font=tkfont.Font(family="微软雅黑", size=12),
+                                    bg="white", anchor=tk.W)
+                tool_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+                
+                # Add use button for blood potion
+                if "血息药剂" in tool or "Blood Potion" in tool:
+                    use_btn = tk.Button(tool_frame, 
+                                      text="使用" if self.current_language == "中文" else "Use",
+                                      font=tkfont.Font(family="微软雅黑", size=10),
+                                      command=lambda t=tool, p=popup: self._wrap_with_click_sound(lambda: self._use_blood_potion(t, p))())
+                    use_btn.pack(side=tk.RIGHT, padx=5)
+        
+        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", 
+                             command=self._wrap_with_click_sound(popup.destroy))
         close_btn.pack(pady=5)
+    
+    def _use_blood_potion(self, tool_name, popup):
+        """Use blood potion to restore stamina and mana."""
+        state = self.manager.state
+        
+        # Add 5 to both stamina and mana
+        old_stamina = state.stamina
+        old_mana = state.mana
+        state.apply_change(stamina_delta=5, mana_delta=5)
+        
+        # Remove the potion from inventory
+        if tool_name in state.inventory:
+            state.inventory.remove(tool_name)
+        
+        # Update display
+        self._update_status_display()
+        
+        # Show confirmation message
+        stamina_change = state.stamina - old_stamina
+        mana_change = state.mana - old_mana
+        message = (f"使用血息药剂成功！\n体力值 +{stamina_change}\n魔力值 +{mana_change}" 
+                  if self.current_language == "中文" 
+                  else f"Blood Potion used successfully!\nStamina +{stamina_change}\nMana +{mana_change}")
+        
+        # Close the tools popup
+        popup.destroy()
+        
+        # Show result message
+        result_popup = tk.Toplevel(self.window)
+        result_popup.title("使用道具" if self.current_language == "中文" else "Use Item")
+        result_popup.geometry("300x150")
+        result_popup.configure(bg="white")
+        result_popup.transient(self.window)
+        
+        # Center the popup
+        result_popup.update_idletasks()
+        x = (self.window.winfo_screenwidth() // 2) - (300 // 2)
+        y = (self.window.winfo_screenheight() // 2) - (150 // 2)
+        result_popup.geometry(f"300x150+{x}+{y}")
+        
+        msg_label = tk.Label(result_popup, text=message, font=tkfont.Font(family="微软雅黑", size=12),
+                           bg="white", justify=tk.CENTER)
+        msg_label.pack(pady=20)
+        
+        ok_btn = tk.Button(result_popup, text="确定" if self.current_language == "中文" else "OK",
+                         command=self._wrap_with_click_sound(result_popup.destroy))
+        ok_btn.pack(pady=10)
     
     def show_clues(self):
         """Show clues inventory."""
@@ -1474,7 +1880,8 @@ class GUIGameRunnerRedesigned:
         text_widget.insert("1.0", clues_list)
         text_widget.config(state=tk.DISABLED)
         
-        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", command=popup.destroy)
+        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", 
+                             command=self._wrap_with_click_sound(popup.destroy))
         close_btn.pack(pady=5)
     
     def show_recall(self):
@@ -1488,7 +1895,8 @@ class GUIGameRunnerRedesigned:
         label = tk.Label(popup, text=text, font=tkfont.Font(family="微软雅黑", size=14))
         label.pack(padx=20, pady=20)
         
-        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", command=popup.destroy)
+        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", 
+                             command=self._wrap_with_click_sound(popup.destroy))
         close_btn.pack(pady=10)
     
     def toggle_language(self):
@@ -1620,6 +2028,6 @@ class GUIGameRunnerRedesigned:
             quit_btn = tk.Button(
                 popup,
                 text="退出" if self.current_language == "中文" else "Quit",
-                command=lambda: [popup.destroy(), self.window.destroy()]
+                command=lambda: [self._play_click_sound(), popup.destroy(), self.window.destroy()]
             )
             quit_btn.pack(pady=10)

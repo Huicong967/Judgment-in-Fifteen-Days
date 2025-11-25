@@ -1,0 +1,44 @@
+name: Game Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Test imports
+      run: |
+        python -c "from game.manager import LevelManager; from game.audio_manager import AudioManager; print('Imports successful')"
+    
+    - name: Test level loading
+      run: |
+        python -c "from game.manager import LevelManager; m = LevelManager(); print(f'Loaded {len(m.levels)} levels')"
+    
+    - name: Verify CSV files
+      run: |
+        python -c "import os; assert os.path.exists('Chinese Text.csv'); assert os.path.exists('English Text.csv'); print('CSV files verified')"
+    
+    - name: Verify audio files
+      run: |
+        python -c "import os; assert os.path.exists('BGM.mp3'); assert os.path.exists('click.mp3'); print('Audio files verified')"

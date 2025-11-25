@@ -33,6 +33,7 @@ if __name__ == '__main__':
     def on_closing():
         """Handle window close event."""
         try:
+            runner.cleanup()
             root.quit()
             root.destroy()
         except:

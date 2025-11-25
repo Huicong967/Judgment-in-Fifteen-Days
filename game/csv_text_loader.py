@@ -29,6 +29,12 @@ class CSVTextLoader:
                 'settlement_a': 'A系统结算',
                 'settlement_b': 'B系统结算',
                 'settlement_c': 'C系统结算',
+                'sabotage': '破坏',
+                'legal': '文书',
+                'bribe': '贿赂',
+                'mystery': '？',
+                'stamina_min': '体力最小值（初始10）',
+                'mana_min': '魔力最小值（初始10）',
             }
         else:  # English
             col_map = {
@@ -73,9 +79,34 @@ class CSVTextLoader:
                     row_count += 1
                     day_str = row.get(col_map['day'], '')
                     
+                    # Check if day_str contains death condition (not a day number)
+                    if day_str and day_str.strip():
+                        day_str_stripped = day_str.strip()
+                        
+                        # Check if this is a death ending condition row
+                        if '体力值≤0' in day_str_stripped and '魔力值' not in day_str_stripped:
+                            # Stamina death only
+                            narrative = row.get(col_map['narrative'], '').strip()
+                            self.data['death_stamina'] = {'narrative': narrative}
+                            print(f"[DEBUG] Loaded stamina death ending: {narrative[:50]}...")
+                            continue
+                        elif '魔力值≤0' in day_str_stripped and '体力值' not in day_str_stripped:
+                            # Mana death only
+                            narrative = row.get(col_map['narrative'], '').strip()
+                            self.data['death_mana'] = {'narrative': narrative}
+                            print(f"[DEBUG] Loaded mana death ending: {narrative[:50]}...")
+                            continue
+                        elif '体力值魔力值同时≤0' in day_str_stripped or ('体力值' in day_str_stripped and '魔力值' in day_str_stripped and '≤0' in day_str_stripped):
+                            # Both stats death
+                            narrative = row.get(col_map['narrative'], '').strip()
+                            self.data['death_both'] = {'narrative': narrative}
+                            print(f"[DEBUG] Loaded both stats death ending: {narrative[:50]}...")
+                            continue
+                    
                     # Check if this is a transition row (no day number but has narrative)
                     if not day_str or not day_str.strip():
                         narrative = row.get(col_map['narrative'], '').strip()
+                        
                         if narrative and last_day_num > 0:
                             # This is a transition after last_day_num
                             transition_key = f'transition_{last_day_num}'
@@ -114,6 +145,16 @@ class CSVTextLoader:
                         print(f"[DEBUG] Failed to parse day from '{day_str}': {e}")
                         continue
                     
+                    # Parse condition requirements
+                    def parse_int(val):
+                        try:
+                            v = val.strip()
+                            if v and v != '结束':
+                                return int(v)
+                            return 0
+                        except:
+                            return 0
+                    
                     self.data[day_num] = {
                         'narrative': row.get(col_map['narrative'], '').strip(),
                         'option_a': row.get(col_map['option_a'], '').strip(),
@@ -125,6 +166,13 @@ class CSVTextLoader:
                         'settlement_a': row.get(col_map['settlement_a'], '').strip(),
                         'settlement_b': row.get(col_map['settlement_b'], '').strip(),
                         'settlement_c': row.get(col_map['settlement_c'], '').strip(),
+                        # Condition requirements
+                        'stamina_min': parse_int(row.get(col_map.get('stamina_min', ''), '0')),
+                        'mana_min': parse_int(row.get(col_map.get('mana_min', ''), '0')),
+                        'sabotage_req': parse_int(row.get(col_map.get('sabotage', ''), '0')),
+                        'legal_req': parse_int(row.get(col_map.get('legal', ''), '0')),
+                        'bribe_req': parse_int(row.get(col_map.get('bribe', ''), '0')),
+                        'mystery_req': parse_int(row.get(col_map.get('mystery', ''), '0')),
                     }
                     print(f"[DEBUG] Loaded day {day_num}: {day_str}")
                     last_day_num = day_num
@@ -187,6 +235,186 @@ class CSVTextLoader:
         if transition_key in self.data:
             return self.data[transition_key].get('narrative', '')
         return None
+    
+    def get_death_ending(self, stamina: int, mana: int) -> Optional[str]:
+        """Get death ending text based on current stamina and mana.
+        
+        Returns the appropriate ending text if player is dead, None otherwise.
+        """
+        if stamina <= 0 and mana <= 0:
+            # Both stats depleted
+            ending_data = self.data.get('death_both', {})
+            return ending_data.get('narrative', '')
+        elif stamina <= 0:
+            # Only stamina depleted
+            ending_data = self.data.get('death_stamina', {})
+            return ending_data.get('narrative', '')
+        elif mana <= 0:
+            # Only mana depleted
+            ending_data = self.data.get('death_mana', {})
+            return ending_data.get('narrative', '')
+        return None
+    
+    def get_requirements(self, day: int, choice: str) -> Dict:
+        """Get requirement conditions for a specific day and choice.
+        
+        Only days 11, 12, 14 options A and B have requirements.
+        
+        Returns:
+            Dict with keys: has_requirements, min_hp, min_mp, min_progress, progress_type
+        """
+        # Only check for days 11, 12, 14 and choices A, B
+        if day not in [11, 12, 14] or choice not in ['A', 'B']:
+            return {'has_requirements': False}
+        
+        day_data = self.data.get(day, {})
+        option_text = day_data.get(f'option_{choice.lower()}', '')
+        
+        # Parse requirements from option text
+        if day == 11:
+            if choice == 'A':
+                # HP≥25且MP≥25且破坏线进度≥3
+                return {
+                    'has_requirements': True,
+                    'min_hp': 25,
+                    'min_mp': 25,
+                    'min_progress': 3,
+                    'progress_type': 'sabotage'
+                }
+            else:  # B
+                # HP＜25或MP＜25或破坏线进度＜3
+                return {
+                    'has_requirements': True,
+                    'max_hp': 24,  # Less than 25
+                    'max_mp': 24,  # Less than 25
+                    'max_progress': 2,  # Less than 3
+                    'progress_type': 'sabotage',
+                    'is_inverse': True  # OR condition, not AND
+                }
+        elif day == 12:
+            if choice == 'A':
+                # HP≥25且MP≥25且文书线进度≥3
+                return {
+                    'has_requirements': True,
+                    'min_hp': 25,
+                    'min_mp': 25,
+                    'min_progress': 3,
+                    'progress_type': 'legal'
+                }
+            else:  # B
+                # HP＜25或MP＜25或文书线进度＜3
+                return {
+                    'has_requirements': True,
+                    'max_hp': 24,
+                    'max_mp': 24,
+                    'max_progress': 2,
+                    'progress_type': 'legal',
+                    'is_inverse': True
+                }
+        elif day == 14:
+            if choice == 'A':
+                # HP≥25且MP≥25且贿赂线进度≥3
+                return {
+                    'has_requirements': True,
+                    'min_hp': 25,
+                    'min_mp': 25,
+                    'min_progress': 3,
+                    'progress_type': 'bribe'
+                }
+            else:  # B
+                # HP＜25或MP＜25或贿赂线进度＜3
+                return {
+                    'has_requirements': True,
+                    'max_hp': 24,
+                    'max_mp': 24,
+                    'max_progress': 2,
+                    'progress_type': 'bribe',
+                    'is_inverse': True
+                }
+        
+        return {'has_requirements': False}
+    
+    def check_requirements(self, day: int, choice: str, state) -> tuple:
+        """Check if player meets requirements for a specific day and choice.
+        
+        Returns:
+            (meets_requirements, list_of_unmet_conditions)
+        """
+        reqs = self.get_requirements(day, choice)
+        
+        if not reqs.get('has_requirements', False):
+            return (True, [])  # No requirements, always allowed
+        
+        current_hp = state.stamina
+        current_mp = state.mana
+        progress_type = reqs.get('progress_type', '')
+        
+        if progress_type == 'sabotage':
+            current_progress = state.sabotage_progress
+            progress_name = '破坏进度' if self.language == '中文' else 'Sabotage Progress'
+        elif progress_type == 'legal':
+            current_progress = state.legal_progress
+            progress_name = '文书进度' if self.language == '中文' else 'Legal Progress'
+        elif progress_type == 'bribe':
+            current_progress = state.bribe_progress
+            progress_name = '贿赂进度' if self.language == '中文' else 'Bribe Progress'
+        else:
+            current_progress = 0
+            progress_name = ''
+        
+        # Check if this is an inverse condition (option B - "less than" requirements)
+        if reqs.get('is_inverse', False):
+            # For option B: need HP<25 OR MP<25 OR progress<3
+            # Player can choose if ANY condition is true
+            max_hp = reqs.get('max_hp', 24)
+            max_mp = reqs.get('max_mp', 24)
+            max_progress = reqs.get('max_progress', 2)
+            
+            hp_ok = current_hp <= max_hp
+            mp_ok = current_mp <= max_mp
+            progress_ok = current_progress <= max_progress
+            
+            if hp_ok or mp_ok or progress_ok:
+                return (True, [])  # At least one condition met
+            else:
+                # All conditions failed - player is too strong for option B
+                unmet = []
+                if self.language == '中文':
+                    unmet.append(f"此选项需要：体力<25 或 魔力<25 或 {progress_name}<3")
+                    unmet.append(f"您当前：体力={current_hp}，魔力={current_mp}，{progress_name}={current_progress}")
+                    unmet.append(f"您的条件过强，请选择选项A")
+                else:
+                    unmet.append(f"This option requires: HP<25 OR MP<25 OR {progress_name}<3")
+                    unmet.append(f"Your current: HP={current_hp}, MP={current_mp}, {progress_name}={current_progress}")
+                    unmet.append(f"You are too strong, please choose option A")
+                return (False, unmet)
+        else:
+            # For option A: need HP>=25 AND MP>=25 AND progress>=3
+            min_hp = reqs.get('min_hp', 25)
+            min_mp = reqs.get('min_mp', 25)
+            min_progress = reqs.get('min_progress', 3)
+            
+            unmet = []
+            
+            if current_hp < min_hp:
+                if self.language == '中文':
+                    unmet.append(f"体力需要≥{min_hp}（当前：{current_hp}）")
+                else:
+                    unmet.append(f"HP must be ≥{min_hp} (Current: {current_hp})")
+            
+            if current_mp < min_mp:
+                if self.language == '中文':
+                    unmet.append(f"魔力需要≥{min_mp}（当前：{current_mp}）")
+                else:
+                    unmet.append(f"MP must be ≥{min_mp} (Current: {current_mp})")
+            
+            if current_progress < min_progress:
+                if self.language == '中文':
+                    unmet.append(f"{progress_name}需要≥{min_progress}（当前：{current_progress}）")
+                else:
+                    unmet.append(f"{progress_name} must be ≥{min_progress} (Current: {current_progress})")
+            
+            return (len(unmet) == 0, unmet)
     
     def parse_settlement(self, settlement_text: str) -> Dict:
         """Parse settlement text to extract stat changes and items.
