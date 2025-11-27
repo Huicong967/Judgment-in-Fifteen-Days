@@ -97,6 +97,10 @@ class GUIGameRunnerRedesigned:
         self.bg_image = None
         self.bg_photo = None
         self.dialog_box_photo = None
+        # Option button image (stored separately for transparency)
+        self.option_bg_pil = None  # PIL image
+        self.option_bg_photo = None  # PhotoImage for display
+        self.choice_ui_items = []  # Canvas item IDs for choice buttons
         # Fullscreen state flag
         self.is_fullscreen = False
         self._prev_geometry = None
@@ -125,7 +129,6 @@ class GUIGameRunnerRedesigned:
         # UI elements
         self.day_text_id = None
         self.narrative_text = None
-        self.choice_buttons = []
         
         # Status text IDs (canvas text items)
         self.stamina_text_id = None
@@ -324,11 +327,21 @@ class GUIGameRunnerRedesigned:
         self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25)
         self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.25)
         
-        # Recreate choice button images
-        self.choice_btn_photos = []
-        for label in ["A", "B", "C"]:
-            choice_photo = self._create_button_image("option.png", label, scale_factor=0.5)
-            self.choice_btn_photos.append(choice_photo)
+        # Load option.png for choice buttons (preserve transparency, no text overlay)
+        try:
+            option_path = "option.png"
+            if os.path.exists(option_path):
+                self.option_bg_pil = Image.open(option_path).convert('RGBA')
+                # Scale to appropriate size
+                opt_width = int(self.option_bg_pil.width * self.scale * 0.5)
+                opt_height = int(self.option_bg_pil.height * self.scale * 0.5)
+                scaled_option = self.option_bg_pil.resize((opt_width, opt_height), Image.Resampling.LANCZOS)
+                self.option_bg_photo = ImageTk.PhotoImage(scaled_option)
+            else:
+                self.option_bg_photo = None
+        except Exception as e:
+            print(f"Error loading option.png: {e}")
+            self.option_bg_photo = None
         
         # Reload background for current day
         # Recalculate and load background; if currently fullscreen use cover mode
@@ -370,16 +383,8 @@ class GUIGameRunnerRedesigned:
                     if self.debug_fullscreen:
                         print(f"[DEBUG] _rebuild_ui: Restoring choices mode")
                     self.canvas.itemconfig(self.narrative_canvas_text, text="")
-                    # Show choice buttons
-                    current_day = self.manager.current_day
-                    options_dict = self.csv_loader.get_options(current_day)
-                    for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
-                        option_text = options_dict.get(choice_key, choice_key)
-                        btn.config(text=option_text, state=tk.NORMAL)
-                        if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
-                            win_id = self.choice_button_windows[i]
-                            self.canvas.itemconfig(win_id, state='normal')
-                            self.canvas.tag_raise(win_id)
+                    # Redraw choice buttons on canvas
+                    self._show_choice_options()
     
     def _load_background_for_day(self, day: int):
         """Load the background image for the specified day."""
@@ -652,44 +657,9 @@ class GUIGameRunnerRedesigned:
             anchor=tk.N
         )
         
-        # Choice buttons (ABC) above text box - vertically stacked
-        # 再次上移 ABC 组：将偏移从 480 增加到 560，整体往上移动更多
-        choice_start_y = text_y - int(560 * s)
-        choice_spacing_y = int(130 * s)
-        
-        # Clear old button windows list and create new ones
-        self.choice_button_windows = []
-        
-        # Create choice button images (initially hidden)
-        self.choice_btn_photos = []
-        self.choice_buttons = []
-        for i, label in enumerate(["A", "B", "C"]):
-            # Create button image without the letter overlay (we'll set the option text at runtime)
-            choice_photo = self._create_button_image("option.png", "", scale_factor=0.5)
-            self.choice_btn_photos.append(choice_photo)
-            
-            btn = tk.Button(
-                self.window,
-                image=choice_photo,
-                text="",
-                compound='center',
-                font=tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold"),
-                command=lambda choice=label: self._wrap_with_click_sound(lambda: self.on_choice_selected(choice))(),
-                borderwidth=0,
-                highlightthickness=0,
-                bg="black",
-                fg="white",
-                activebackground="black",
-                activeforeground="white"
-            )
-            y_pos = choice_start_y + i * choice_spacing_y
-            # Create window on canvas
-            btn_window = self.canvas.create_window(self.display_width // 2, y_pos, window=btn)
-            self.choice_buttons.append(btn)
-            # Initially hide the button window
-            self.canvas.itemconfig(btn_window, state='hidden')
-            # Store window id for show/hide
-            self.choice_button_windows.append(btn_window)
+        # Choice buttons will be drawn directly on canvas in _show_choice_options()
+        # No tk.Button widgets needed - this preserves transparency
+        self.choice_ui_items = []  # Will store canvas item IDs
         
         # Bottom-right buttons
         right_x_start = self.display_width - int(220 * s)
@@ -846,8 +816,13 @@ class GUIGameRunnerRedesigned:
             self.canvas.itemconfig(self.narrative_canvas_text, text="")
     
     def _show_choice_options(self):
-        """Show ABC choice buttons after narrative is complete."""
+        """Show ABC choice buttons using Canvas for transparency."""
         print("[DEBUG] _show_choice_options called!")
+        
+        # Clear old choice UI items from canvas
+        for item_id in self.choice_ui_items:
+            self.canvas.delete(item_id)
+        self.choice_ui_items = []
         
         # Get current day options from CSV
         current_day = self.manager.current_day
@@ -886,33 +861,70 @@ class GUIGameRunnerRedesigned:
         self.canvas.itemconfig(self.narrative_canvas_text, text="")
         self.text_display_mode = 'choices'
         
-        if hasattr(self, 'choice_button_windows'):
-            print(f"[DEBUG] choice_button_windows count: {len(self.choice_button_windows)}")
-        else:
-            print("[DEBUG] ERROR: No choice_button_windows attribute!")
-            return
-
-        # Update and show choice buttons
-        for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
-            option_text = options_dict.get(choice_key, choice_key)
-            print(f"[DEBUG] Setting button {i} ({choice_key}) to: {option_text}")
-            
-            # Update button label if supported
-            try:
-                btn.config(text=option_text)
-            except Exception as e:
-                print(f"[DEBUG] Could not set button text: {e}")
-            
-            btn.config(state=tk.NORMAL)
-            
-            # Show the button window and raise it above other canvas items
-            if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
-                win_id = self.choice_button_windows[i]
-                print(f"[DEBUG] Showing button window {i} (id={win_id})")
-                self.canvas.itemconfig(win_id, state='normal')
-                self.canvas.tag_raise(win_id)
+        # Calculate positions
+        s = self.scale
+        text_y = self.display_height - int(200 * s)
+        choice_start_y = text_y - int(560 * s)
+        choice_spacing_y = int(130 * s)
         
-        print("[DEBUG] All choice buttons should now be visible!")
+        # Font for choice text
+        choice_font = tkfont.Font(family="微软雅黑", size=int(18 * s), weight="bold")
+        
+        # Draw each choice on canvas
+        for i, choice_key in enumerate(['A', 'B', 'C']):
+            option_text = options_dict.get(choice_key, choice_key)
+            y_pos = choice_start_y + i * choice_spacing_y
+            x_pos = self.display_width // 2
+            
+            print(f"[DEBUG] Drawing choice {choice_key} at ({x_pos}, {y_pos}): {option_text}")
+            
+            # Draw background image if available
+            if self.option_bg_photo:
+                img_id = self.canvas.create_image(
+                    x_pos, y_pos,
+                    image=self.option_bg_photo,
+                    tags="choice_ui"
+                )
+                self.choice_ui_items.append(img_id)
+                
+                # Bind click event to image
+                self.canvas.tag_bind(img_id, '<Button-1>', 
+                    lambda e, c=choice_key: self._wrap_with_click_sound(lambda: self.on_choice_selected(c))())
+                # Hover effect
+                self.canvas.tag_bind(img_id, '<Enter>', lambda e: self.canvas.config(cursor="hand2"))
+                self.canvas.tag_bind(img_id, '<Leave>', lambda e: self.canvas.config(cursor=""))
+            else:
+                # Fallback: draw a rectangle
+                rect_w = int(1000 * s)
+                rect_h = int(100 * s)
+                rect_id = self.canvas.create_rectangle(
+                    x_pos - rect_w//2, y_pos - rect_h//2,
+                    x_pos + rect_w//2, y_pos + rect_h//2,
+                    fill="#333333", outline="#FFD700", width=2, tags="choice_ui"
+                )
+                self.choice_ui_items.append(rect_id)
+                self.canvas.tag_bind(rect_id, '<Button-1>',
+                    lambda e, c=choice_key: self._wrap_with_click_sound(lambda: self.on_choice_selected(c))())
+            
+            # Draw text on top of image
+            text_id = self.canvas.create_text(
+                x_pos, y_pos,
+                text=option_text,
+                font=choice_font,
+                fill="white",
+                justify="center",
+                width=int(900 * s),
+                tags="choice_ui"
+            )
+            self.choice_ui_items.append(text_id)
+            
+            # Bind click to text as well
+            self.canvas.tag_bind(text_id, '<Button-1>',
+                lambda e, c=choice_key: self._wrap_with_click_sound(lambda: self.on_choice_selected(c))())
+            self.canvas.tag_bind(text_id, '<Enter>', lambda e: self.canvas.config(cursor="hand2"))
+            self.canvas.tag_bind(text_id, '<Leave>', lambda e: self.canvas.config(cursor=""))
+        
+        print("[DEBUG] All choice buttons drawn on canvas!")
     
     def _show_settlement_modal(self):
         """Show settlement modal after result text is complete."""
@@ -1227,12 +1239,10 @@ class GUIGameRunnerRedesigned:
         # Display first sentence
         self._update_text_display()
         
-        # Hide choice buttons initially
-        if hasattr(self, 'choice_button_windows'):
-            for btn_window in self.choice_button_windows:
-                self.canvas.itemconfig(btn_window, state='hidden')
-        for btn in self.choice_buttons:
-            btn.config(state=tk.DISABLED)
+        # Clear any choice UI items (they will be drawn when needed)
+        for item_id in self.choice_ui_items:
+            self.canvas.delete(item_id)
+        self.choice_ui_items = []
         
         # Force text and navigation buttons to top after everything is loaded
         self.window.after(10, self._ensure_text_visible)
@@ -1365,12 +1375,11 @@ class GUIGameRunnerRedesigned:
             self._show_requirements_warning(unmet_conditions)
             return  # Don't proceed with choice
         
-        # Hide choice buttons after selection
-        if hasattr(self, 'choice_button_windows'):
-            for btn_window in self.choice_button_windows:
-                self.canvas.itemconfig(btn_window, state='hidden')
-        for btn in self.choice_buttons:
-            btn.config(state=tk.DISABLED)
+        # Clear choice UI items from canvas
+        for item_id in self.choice_ui_items:
+            self.canvas.delete(item_id)
+        self.choice_ui_items = []
+        self.canvas.config(cursor="")  # Reset cursor
         
         # Get result text from CSV
         result_text = self.csv_loader.get_result(current_day, choice)
@@ -2028,27 +2037,18 @@ class GUIGameRunnerRedesigned:
                 self.text_display_mode = 'narrative'
                 self._update_text_display()
                 
-                # Hide choice buttons
-                if hasattr(self, 'choice_button_windows'):
-                    for btn_window in self.choice_button_windows:
-                        self.canvas.itemconfig(btn_window, state='hidden')
-                for btn in self.choice_buttons:
-                    btn.config(state=tk.DISABLED)
+                # Clear any choice UI items
+                for item_id in self.choice_ui_items:
+                    self.canvas.delete(item_id)
+                self.choice_ui_items = []
                     
             elif saved_mode == 'choices':
-                # In choices mode - clear text and show choice buttons
+                # In choices mode - clear text and redraw choice buttons with new language
                 self.text_display_mode = 'choices'
                 self.canvas.itemconfig(self.narrative_canvas_text, text="")
                 
-                # Show choice buttons with new language
-                options_dict = self.csv_loader.get_options(current_day)
-                for i, (choice_key, btn) in enumerate(zip(['A', 'B', 'C'], self.choice_buttons)):
-                    option_text = options_dict.get(choice_key, choice_key)
-                    btn.config(text=option_text, state=tk.NORMAL)
-                    if hasattr(self, 'choice_button_windows') and i < len(self.choice_button_windows):
-                        win_id = self.choice_button_windows[i]
-                        self.canvas.itemconfig(win_id, state='normal')
-                        self.canvas.tag_raise(win_id)
+                # Redraw choices on canvas with new language
+                self._show_choice_options()
                         
             elif saved_mode == 'result':
                 # In result mode - reload result text for the last choice
@@ -2060,12 +2060,10 @@ class GUIGameRunnerRedesigned:
                     self.text_display_mode = 'result'
                     self._update_text_display()
                     
-                    # Hide choice buttons
-                    if hasattr(self, 'choice_button_windows'):
-                        for btn_window in self.choice_button_windows:
-                            self.canvas.itemconfig(btn_window, state='hidden')
-                    for btn in self.choice_buttons:
-                        btn.config(state=tk.DISABLED)
+                    # Clear any choice UI items
+                    for item_id in self.choice_ui_items:
+                        self.canvas.delete(item_id)
+                    self.choice_ui_items = []
                 else:
                     # No choice saved - fallback to narrative
                     narrative = self.csv_loader.get_narrative(current_day)
@@ -2074,12 +2072,10 @@ class GUIGameRunnerRedesigned:
                     self.text_display_mode = 'narrative'
                     self._update_text_display()
                     
-                    # Hide choice buttons
-                    if hasattr(self, 'choice_button_windows'):
-                        for btn_window in self.choice_button_windows:
-                            self.canvas.itemconfig(btn_window, state='hidden')
-                    for btn in self.choice_buttons:
-                        btn.config(state=tk.DISABLED)
+                    # Clear any choice UI items
+                    for item_id in self.choice_ui_items:
+                        self.canvas.delete(item_id)
+                    self.choice_ui_items = []
             elif saved_mode == 'result_before_ending':
                 # In result_before_ending mode - reload result text for the last choice
                 if hasattr(self, 'last_choice') and self.last_choice:
@@ -2102,12 +2098,10 @@ class GUIGameRunnerRedesigned:
                                 break
                         self.pending_ending_text = ending_text
                     
-                    # Hide choice buttons
-                    if hasattr(self, 'choice_button_windows'):
-                        for btn_window in self.choice_button_windows:
-                            self.canvas.itemconfig(btn_window, state='hidden')
-                    for btn in self.choice_buttons:
-                        btn.config(state=tk.DISABLED)
+                    # Clear any choice UI items
+                    for item_id in self.choice_ui_items:
+                        self.canvas.delete(item_id)
+                    self.choice_ui_items = []
                 else:
                     # No choice saved - fallback to narrative
                     narrative = self.csv_loader.get_narrative(current_day)
@@ -2116,12 +2110,10 @@ class GUIGameRunnerRedesigned:
                     self.text_display_mode = 'narrative'
                     self._update_text_display()
                     
-                    # Hide choice buttons
-                    if hasattr(self, 'choice_button_windows'):
-                        for btn_window in self.choice_button_windows:
-                            self.canvas.itemconfig(btn_window, state='hidden')
-                    for btn in self.choice_buttons:
-                        btn.config(state=tk.DISABLED)
+                    # Clear any choice UI items
+                    for item_id in self.choice_ui_items:
+                        self.canvas.delete(item_id)
+                    self.choice_ui_items = []
             elif saved_mode == 'transition':
                 # In transition mode - reload transition text in new language
                 # Transition happens after Day 5, before Day 6
@@ -2181,12 +2173,10 @@ class GUIGameRunnerRedesigned:
                     self.text_display_mode = 'transition'
                     self._update_text_display()
                     
-                    # Hide choice buttons
-                    if hasattr(self, 'choice_button_windows'):
-                        for btn_window in self.choice_button_windows:
-                            self.canvas.itemconfig(btn_window, state='hidden')
-                    for btn in self.choice_buttons:
-                        btn.config(state=tk.DISABLED)
+                    # Clear any choice UI items
+                    for item_id in self.choice_ui_items:
+                        self.canvas.delete(item_id)
+                    self.choice_ui_items = []
                     
                     print(f"[DEBUG] Language switch in transition mode: reloaded {len(self.current_text_sentences)} sentences at index {self.current_sentence_index}")
                 else:

@@ -47,4 +47,3 @@ if __name__ == '__main__':
     
     # Run main loop
     root.mainloop()
-
