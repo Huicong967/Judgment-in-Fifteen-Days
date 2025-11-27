@@ -101,6 +101,15 @@ class GUIGameRunnerRedesigned:
         self.option_bg_pil = None  # PIL image
         self.option_bg_photo = None  # PhotoImage for display
         self.choice_ui_items = []  # Canvas item IDs for choice buttons
+        # Ending background images
+        self.legal_fail_pil_image = None  # PIL image for LegalFail.png
+        self.legal_success_pil_image = None  # PIL image for LegalSuccess.png
+        self.sabotage_success_pil_image = None  # PIL image for SabotageSuccess.png
+        self.sabotage_fail_pil_image = None  # PIL image for SabotageFail.png
+        self.breakin_fail_pil_image = None  # PIL image for BreakInToJailFail.png
+        self.bribe_success_pil_image = None  # PIL image for BribeSuccess.png
+        self.bribe_fail_pil_image = None  # PIL image for BribeFail.png
+        self.current_ending_bg_photo = None  # PhotoImage for ending background
         # Fullscreen state flag
         self.is_fullscreen = False
         self._prev_geometry = None
@@ -485,6 +494,26 @@ class GUIGameRunnerRedesigned:
         width_scale = screen_w / target_width
         height_scale = screen_h / target_height
         self.scale = min(width_scale, height_scale)
+        
+        # Load ending background images
+        ending_images = {
+            "LegalFail.png": "legal_fail_pil_image",
+            "LegalSuccess.png": "legal_success_pil_image",
+            "SabotageSuccess.png": "sabotage_success_pil_image",
+            "SabotageFail.png": "sabotage_fail_pil_image",
+            "BreakInToJailFail.png": "breakin_fail_pil_image",
+            "BribeSuccess.png": "bribe_success_pil_image",
+            "BribeFail.png": "bribe_fail_pil_image"
+        }
+        
+        for img_path, attr_name in ending_images.items():
+            try:
+                if os.path.exists(img_path):
+                    setattr(self, attr_name, Image.open(img_path).convert('RGBA'))
+                else:
+                    print(f"Warning: {img_path} not found.")
+            except Exception as e:
+                print(f"Error loading {img_path}: {e}")
         
         # Set topmost
         try:
@@ -1770,9 +1799,45 @@ class GUIGameRunnerRedesigned:
         self.current_ending_text = ending_text
         self.current_ending_type = death_type
         
-        # Clear entire canvas to black
+        # Clear entire canvas
         self.canvas.delete("all")
-        self.canvas.configure(bg="black")
+        
+        # Define ending patterns with their corresponding background images
+        ending_patterns = [
+            ("焰下之誓", "Oath Under the Flame", self.legal_fail_pil_image, "LegalFail.png"),
+            ("赦令幻象", "Illusion of Pardon", self.legal_success_pil_image, "LegalSuccess.png"),
+            ("铁之路", "Iron Path", self.sabotage_success_pil_image, "SabotageSuccess.png"),
+            ("坠灰者", "Fallen to Ash", self.sabotage_fail_pil_image, "SabotageFail.png"),
+            ("隐火之谋", "Hidden Fire Plot", self.breakin_fail_pil_image, "BreakInToJailFail.png"),
+            ("金钥之门", "Golden Key Gate", self.bribe_success_pil_image, "BribeSuccess.png"),
+            ("苦役之血", "Blood of Hard Labor", self.bribe_fail_pil_image, "BribeFail.png")
+        ]
+        
+        bg_drawn = False
+        
+        # Check each ending pattern
+        for cn_name, en_name, pil_image, img_name in ending_patterns:
+            if (cn_name in ending_text or en_name in ending_text) and pil_image:
+                try:
+                    # Scale image to fit screen
+                    w = self.display_width
+                    h = self.display_height
+                    
+                    resized_pil = pil_image.resize((w, h), Image.Resampling.LANCZOS)
+                    self.current_ending_bg_photo = ImageTk.PhotoImage(resized_pil)
+                    
+                    # Draw the image as background
+                    self.canvas.create_image(w//2, h//2, image=self.current_ending_bg_photo)
+                    
+                    bg_drawn = True
+                    print(f"[DEBUG] {img_name} background displayed for {cn_name} ending")
+                    break
+                except Exception as e:
+                    print(f"Error displaying {img_name}: {e}")
+        
+        # If no special background was drawn, use black background
+        if not bg_drawn:
+            self.canvas.configure(bg="black")
         
         # Calculate text position (center of screen, slightly above center)
         text_x = self.display_width // 2
