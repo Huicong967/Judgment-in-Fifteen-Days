@@ -73,111 +73,146 @@ class CSVTextLoader:
         try:
             with open(filepath, 'r', encoding='utf-8-sig') as f:  # Use utf-8-sig to handle BOM
                 reader = csv.DictReader(f)
-                row_count = 0
-                last_day_num = 0
-                for row in reader:
-                    row_count += 1
-                    day_str = row.get(col_map['day'], '')
+                rows = list(reader)  # Read all rows into a list
+                
+            row_count = 0
+            last_day_num = 0
+            i = 0
+            while i < len(rows):
+                row = rows[i]
+                row_count += 1
+                day_str = row.get(col_map['day'], '')
+                
+                # Check if day_str contains death condition (not a day number)
+                if day_str and day_str.strip():
+                    day_str_stripped = day_str.strip()
                     
-                    # Check if day_str contains death condition (not a day number)
-                    if day_str and day_str.strip():
-                        day_str_stripped = day_str.strip()
-                        
-                        # Check if this is a death ending condition row
-                        if '体力值≤0' in day_str_stripped and '魔力值' not in day_str_stripped:
-                            # Stamina death only
-                            narrative = row.get(col_map['narrative'], '').strip()
-                            self.data['death_stamina'] = {'narrative': narrative}
-                            print(f"[DEBUG] Loaded stamina death ending: {narrative[:50]}...")
-                            continue
-                        elif '魔力值≤0' in day_str_stripped and '体力值' not in day_str_stripped:
-                            # Mana death only
-                            narrative = row.get(col_map['narrative'], '').strip()
-                            self.data['death_mana'] = {'narrative': narrative}
-                            print(f"[DEBUG] Loaded mana death ending: {narrative[:50]}...")
-                            continue
-                        elif '体力值魔力值同时≤0' in day_str_stripped or ('体力值' in day_str_stripped and '魔力值' in day_str_stripped and '≤0' in day_str_stripped):
-                            # Both stats death
-                            narrative = row.get(col_map['narrative'], '').strip()
+                    # Define death condition markers based on language
+                    if self.language == "中文":
+                        stamina_marker = '体力值≤0'
+                        mana_marker = '魔力值≤0'
+                        both_marker = '体力值魔力值同时≤0'
+                        stamina_keyword = '体力值'
+                        mana_keyword = '魔力值'
+                    else:  # English
+                        stamina_marker = 'Stamina value'
+                        mana_marker = 'Magic value'
+                        both_marker = 'Stamina Value Magic Value'
+                        stamina_keyword = 'Stamina'
+                        mana_keyword = 'Magic'
+                    
+                    # Check if this is a death ending condition row
+                    # Both stats death - check this first since it contains both keywords
+                    if both_marker in day_str_stripped and '≤' in day_str_stripped:
+                        # Both stats death - text is in next row's first column
+                        if i + 1 < len(rows):
+                            next_row = rows[i + 1]
+                            narrative = next_row.get(col_map['day'], '').strip()
                             self.data['death_both'] = {'narrative': narrative}
                             print(f"[DEBUG] Loaded both stats death ending: {narrative[:50]}...")
+                            i += 2  # Skip both current and next row
                             continue
-                    
-                    # Check if this is a transition row (no day number but has narrative)
-                    if not day_str or not day_str.strip():
-                        narrative = row.get(col_map['narrative'], '').strip()
-                        
-                        if narrative and last_day_num > 0:
-                            # This is a transition after last_day_num
-                            transition_key = f'transition_{last_day_num}'
-                            self.data[transition_key] = {
-                                'narrative': narrative,
-                            }
-                            print(f"[DEBUG] Loaded transition after day {last_day_num}")
-                        continue
-                    
-                    # Extract day number from "第X天 ..." format (Chinese) or "Day X ..." format (English)
-                    try:
-                        day_str = day_str.strip()
-                        if self.language == "中文":
-                            if '第' in day_str and '天' in day_str:
-                                # Extract number between 第 and 天
-                                parts = day_str.split('第')
-                                if len(parts) > 1:
-                                    num_part = parts[1].split('天')[0].strip()
-                                    day_num = int(num_part)
-                                else:
-                                    continue
-                            else:
-                                continue
-                        else:  # English
-                            if 'Day' in day_str:
-                                # Extract number after "Day"
-                                parts = day_str.split('Day')
-                                if len(parts) > 1:
-                                    num_part = parts[1].strip().split()[0]  # Get first word after "Day"
-                                    day_num = int(num_part)
-                                else:
-                                    continue
-                            else:
-                                continue
-                    except (ValueError, IndexError) as e:
-                        print(f"[DEBUG] Failed to parse day from '{day_str}': {e}")
-                        continue
-                    
-                    # Parse condition requirements
-                    def parse_int(val):
-                        try:
-                            v = val.strip()
-                            if v and v != '结束':
-                                return int(v)
-                            return 0
-                        except:
-                            return 0
-                    
-                    self.data[day_num] = {
-                        'narrative': row.get(col_map['narrative'], '').strip(),
-                        'option_a': row.get(col_map['option_a'], '').strip(),
-                        'option_b': row.get(col_map['option_b'], '').strip(),
-                        'option_c': row.get(col_map['option_c'], '').strip(),
-                        'result_a': row.get(col_map['result_a'], '').strip(),
-                        'result_b': row.get(col_map['result_b'], '').strip(),
-                        'result_c': row.get(col_map['result_c'], '').strip(),
-                        'settlement_a': row.get(col_map['settlement_a'], '').strip(),
-                        'settlement_b': row.get(col_map['settlement_b'], '').strip(),
-                        'settlement_c': row.get(col_map['settlement_c'], '').strip(),
-                        # Condition requirements
-                        'stamina_min': parse_int(row.get(col_map.get('stamina_min', ''), '0')),
-                        'mana_min': parse_int(row.get(col_map.get('mana_min', ''), '0')),
-                        'sabotage_req': parse_int(row.get(col_map.get('sabotage', ''), '0')),
-                        'legal_req': parse_int(row.get(col_map.get('legal', ''), '0')),
-                        'bribe_req': parse_int(row.get(col_map.get('bribe', ''), '0')),
-                        'mystery_req': parse_int(row.get(col_map.get('mystery', ''), '0')),
-                    }
-                    print(f"[DEBUG] Loaded day {day_num}: {day_str}")
-                    last_day_num = day_num
+                    elif stamina_marker in day_str_stripped and mana_keyword not in day_str_stripped:
+                        # Stamina death only - text is in next row's first column
+                        if i + 1 < len(rows):
+                            next_row = rows[i + 1]
+                            narrative = next_row.get(col_map['day'], '').strip()
+                            self.data['death_stamina'] = {'narrative': narrative}
+                            print(f"[DEBUG] Loaded stamina death ending: {narrative[:50]}...")
+                            i += 2  # Skip both current and next row
+                            continue
+                    elif mana_marker in day_str_stripped and stamina_keyword not in day_str_stripped:
+                        # Mana death only - text is in next row's first column
+                        if i + 1 < len(rows):
+                            next_row = rows[i + 1]
+                            narrative = next_row.get(col_map['day'], '').strip()
+                            self.data['death_mana'] = {'narrative': narrative}
+                            print(f"[DEBUG] Loaded mana death ending: {narrative[:50]}...")
+                            i += 2  # Skip both current and next row
+                            continue
                 
-                print(f"[DEBUG] Processed {row_count} rows total")
+                # Check if this is a transition row (no day number but has narrative)
+                if not day_str or not day_str.strip():
+                    narrative = row.get(col_map['narrative'], '').strip()
+                    
+                    if narrative and last_day_num > 0:
+                        # This is a transition after last_day_num
+                        transition_key = f'transition_{last_day_num}'
+                        self.data[transition_key] = {
+                            'narrative': narrative,
+                        }
+                        print(f"[DEBUG] Loaded transition after day {last_day_num}")
+                    i += 1
+                    continue
+                
+                # Extract day number from "第X天 ..." format (Chinese) or "Day X ..." format (English)
+                try:
+                    day_str = day_str.strip()
+                    if self.language == "中文":
+                        if '第' in day_str and '天' in day_str:
+                            # Extract number between 第 and 天
+                            parts = day_str.split('第')
+                            if len(parts) > 1:
+                                num_part = parts[1].split('天')[0].strip()
+                                day_num = int(num_part)
+                            else:
+                                i += 1
+                                continue
+                        else:
+                            i += 1
+                            continue
+                    else:  # English
+                        if 'Day' in day_str:
+                            # Extract number after "Day"
+                            parts = day_str.split('Day')
+                            if len(parts) > 1:
+                                num_part = parts[1].strip().split()[0]  # Get first word after "Day"
+                                day_num = int(num_part)
+                            else:
+                                i += 1
+                                continue
+                        else:
+                            i += 1
+                            continue
+                except (ValueError, IndexError) as e:
+                    print(f"[DEBUG] Failed to parse day from '{day_str}': {e}")
+                    i += 1
+                    continue
+                
+                # Parse condition requirements
+                def parse_int(val):
+                    try:
+                        v = val.strip()
+                        if v and v != '结束':
+                            return int(v)
+                        return 0
+                    except:
+                        return 0
+                
+                self.data[day_num] = {
+                    'narrative': row.get(col_map['narrative'], '').strip(),
+                    'option_a': row.get(col_map['option_a'], '').strip(),
+                    'option_b': row.get(col_map['option_b'], '').strip(),
+                    'option_c': row.get(col_map['option_c'], '').strip(),
+                    'result_a': row.get(col_map['result_a'], '').strip(),
+                    'result_b': row.get(col_map['result_b'], '').strip(),
+                    'result_c': row.get(col_map['result_c'], '').strip(),
+                    'settlement_a': row.get(col_map['settlement_a'], '').strip(),
+                    'settlement_b': row.get(col_map['settlement_b'], '').strip(),
+                    'settlement_c': row.get(col_map['settlement_c'], '').strip(),
+                    # Condition requirements
+                    'stamina_min': parse_int(row.get(col_map.get('stamina_min', ''), '0')),
+                    'mana_min': parse_int(row.get(col_map.get('mana_min', ''), '0')),
+                    'sabotage_req': parse_int(row.get(col_map.get('sabotage', ''), '0')),
+                    'legal_req': parse_int(row.get(col_map.get('legal', ''), '0')),
+                    'bribe_req': parse_int(row.get(col_map.get('bribe', ''), '0')),
+                    'mystery_req': parse_int(row.get(col_map.get('mystery', ''), '0')),
+                }
+                print(f"[DEBUG] Loaded day {day_num}: {day_str}")
+                last_day_num = day_num
+                i += 1
+            
+            print(f"[DEBUG] Processed {row_count} rows total")
             
             print(f"[INFO] Loaded {len(self.data)} days from {filename}")
         except Exception as e:
@@ -518,13 +553,25 @@ class CSVTextLoader:
             # Parse items and clues (English)
             if 'Item:' in line or 'item:' in line or 'Item acquired:' in line:
                 item = line.split(':')[-1].strip()
+                # Remove parentheses content at the end
+                if '(' in item:
+                    item = item.split('(')[0].strip()
                 if item:
                     result['items_gained'].append(item)
             
-            if 'Get clue:' in line or 'get clue:' in line or 'Get Clue:' in line:
-                clue = line.split(':')[-1].strip()
-                if clue:
-                    result['clues_gained'].append(clue)
+            # Match various English clue formats: "Get a clue:", "Get clue:", "Get Clue:", "Get the clue:"
+            if 'Get' in line and 'clue' in line.lower() and ':' in line:
+                # Find the position of "clue:" (case-insensitive)
+                clue_lower = line.lower()
+                if 'clue:' in clue_lower:
+                    # Extract text after "clue:"
+                    clue_pos = clue_lower.find('clue:')
+                    clue = line[clue_pos + 5:].strip()  # Skip "clue:"
+                    # Remove parentheses content at the end
+                    if '(' in clue:
+                        clue = clue.split('(')[0].strip()
+                    if clue:
+                        result['clues_gained'].append(clue)
             
             # Parse progress changes (Chinese)
             if '贿赂' in line and ('推进' in line or '+' in line or '-' in line):

@@ -137,12 +137,17 @@ Desktop.ini
 # Project-specific
 *.bak
 *.tmp
+*.log
 debug.log
 run_stderr.log
 run_stdout.log
 cleanup_obsolete_files.ps1
 CLEANUP_ANALYSIS.md
 CLEANUP_COMPLETED.md
+normalized_backgrounds/
+*.todo
+*_test.py
+test_*.py
 
 # Documentation (keep only README.md, LICENSE.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md)
 CLEANUP_*.md

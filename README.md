@@ -67,19 +67,23 @@ Judgment in Fifteen Days/
 │   ├── runner_redesigned.py       # Main game runner
 │   ├── csv_text_loader.py         # CSV text loader
 │   ├── audio_manager.py           # Audio system manager
-│   ├── levels/
-│   │   ├── __init__.py
-│   │   └── csv_level.py           # CSV-based level definition
-│   ├── gui/
-│   │   └── __init__.py
-│   └── i18n/
-│       └── __init__.py
+│   └── levels/
+│       ├── __init__.py
+│       └── csv_level.py           # CSV-based level definition
+├── UI/                            # All UI assets and backgrounds
+│   ├── Day *.PNG                  # Day background images
+│   ├── *Button*.png               # Button images (bilingual)
+│   ├── *TextUI*.png               # Modal backgrounds (bilingual)
+│   ├── DialogBox.png              # Bottom narrative box
+│   ├── DayBar.png                 # Top day bar
+│   └── *.png                      # Other UI elements
 ├── Chinese Text.csv               # Chinese game content
 ├── English Text.csv               # English game content
 ├── BGM.mp3                        # Background music (CC0)
 ├── click.mp3                      # Click sound effect (CC0)
-├── *.png                          # UI elements and backgrounds
+├── requirements.txt               # Python dependencies
 └── tools/                         # Development tools
+    └── normalize_images.py        # Image processing utility
 ```
 
 ## Core Systems
@@ -136,9 +140,11 @@ Edit `Chinese Text.csv` and `English Text.csv` to add or modify:
 
 ### Adding Images
 
-1. Place images in the root directory
+1. Place images in the `UI/` directory
 2. Follow naming convention: `Day X.PNG` for backgrounds
-3. UI elements: `DialogBox.png`, `option.png`, etc.
+3. UI elements with bilingual support should have two versions:
+   - Chinese: `*Chinese.png` or `*UIChinese.png`
+   - English: `*.png` or `*UI.png`
 
 ## Technical Stack
 

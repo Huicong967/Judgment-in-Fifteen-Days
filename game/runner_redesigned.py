@@ -3,6 +3,7 @@ from tkinter import font as tkfont
 from tkinter import simpledialog
 from PIL import Image, ImageTk, ImageDraw, ImageFont
 import os
+import sys
 import re
 from typing import Optional
 
@@ -67,13 +68,25 @@ def show_language_selection_dialog():
                          width=12, height=2, command=select_english)
     en_button.pack(side=tk.LEFT, padx=10)
     
+    # Handle window close event (X button)
+    def on_closing():
+        print("[DEBUG] Language selection dialog closed, exiting program...")
+        try:
+            dialog.quit()
+            dialog.destroy()
+        except:
+            pass
+        sys.exit(0)
+    
+    dialog.protocol("WM_DELETE_WINDOW", on_closing)
+    
     dialog.mainloop()
     
     return selected_language["lang"]
 
 
 class GUIGameRunnerRedesigned:
-    def __init__(self, manager: LevelManager, window: tk.Tk, initial_language='中文', on_language_change=None, on_game_over=None):
+    def __init__(self, manager: LevelManager, window: tk.Tk, initial_language='中文', on_language_change=None, on_game_over=None, audio_manager=None):
         self.manager = manager
         self.window = window
         self.on_language_change_callback = on_language_change
@@ -85,8 +98,8 @@ class GUIGameRunnerRedesigned:
         # CSV text loader
         self.csv_loader = CSVTextLoader(language=self.current_language)
         
-        # Audio manager
-        self.audio_manager = AudioManager()
+        # Audio manager - use provided instance or create new one
+        self.audio_manager = audio_manager if audio_manager else AudioManager()
         
         # Initialize scale and dimensions
         self.scale = 1.0
@@ -161,6 +174,18 @@ class GUIGameRunnerRedesigned:
         # Story background modal tracking
         self.story_modal = None
         self.story_modal_open = False
+        
+        # Settlement modal tracking
+        self.settlement_modal_open = False
+        
+        # Tools modal tracking
+        self.tools_modal_open = False
+        
+        # Clues modal tracking
+        self.clues_modal_open = False
+        
+        # Success modal tracking
+        self.success_modal_open = False
         
         # Result popup elements
         self.result_popup = None
@@ -319,6 +344,29 @@ class GUIGameRunnerRedesigned:
         saved_text_mode = self.text_display_mode
         saved_sentences = self.current_text_sentences.copy() if self.current_text_sentences else []
         
+        # Save settlement modal state (must save before show_current_level resets it)
+        saved_settlement_modal_open = self.settlement_modal_open
+        
+        # Save story modal state
+        saved_story_modal_open = self.story_modal_open
+        saved_story_text = None
+        if saved_story_modal_open:
+            # Find and save the story text from canvas
+            story_items = self.canvas.find_withtag("story_modal")
+            for item_id in story_items:
+                if self.canvas.type(item_id) == "text":
+                    saved_story_text = self.canvas.itemcget(item_id, "text")
+                    break
+        
+        # Save tools modal state
+        saved_tools_modal_open = self.tools_modal_open
+        
+        # Save clues modal state
+        saved_clues_modal_open = self.clues_modal_open
+        
+        # Save success modal state
+        saved_success_modal_open = self.success_modal_open
+        
         if self.debug_fullscreen:
             print(f"[DEBUG] _rebuild_ui: Saved state - mode={saved_text_mode}, sentence_index={saved_sentence_index}/{len(saved_sentences)}")
         
@@ -329,16 +377,43 @@ class GUIGameRunnerRedesigned:
         self.canvas.config(width=self.display_width, height=self.display_height)
         
         # Recreate button images with new scale
-        tools_text = "道具" if self.current_language == "中文" else "Tools"
-        clues_text = "线索" if self.current_language == "中文" else "Clues"
-        lang_text = "English" if self.current_language == "中文" else "中文"
-        self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.25)
-        self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25)
-        self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.25)
+        # Tools button photo (same for both languages)
+        if self.tools_btn_pil:
+            btn_w = int(self.tools_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(self.tools_btn_pil.height * 0.6 * self.scale)
+            resized_btn = self.tools_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.tools_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new image not found
+            tools_text = "道具" if self.current_language == "中文" else "Tools"
+            self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.25)
+        
+        # Clues button photo (same for both languages)
+        if self.clues_btn_pil:
+            btn_w = int(self.clues_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(self.clues_btn_pil.height * 0.6 * self.scale)
+            resized_btn = self.clues_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.clues_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new image not found
+            clues_text = "线索" if self.current_language == "中文" else "Clues"
+            self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25)
+        
+        # Create language button photo based on current language
+        lang_btn_pil = self.lang_btn_en_pil if self.current_language == "中文" else self.lang_btn_cn_pil
+        if lang_btn_pil:
+            btn_w = int(lang_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(lang_btn_pil.height * 0.6 * self.scale)
+            resized_btn = lang_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.lang_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new images not found
+            lang_text = "English" if self.current_language == "中文" else "中文"
+            self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.25)
         
         # Load option.png for choice buttons (preserve transparency, no text overlay)
         try:
-            option_path = "option.png"
+            option_path = "UI/option.png"
             if os.path.exists(option_path):
                 self.option_bg_pil = Image.open(option_path).convert('RGBA')
                 # Scale to appropriate size
@@ -372,6 +447,17 @@ class GUIGameRunnerRedesigned:
                 
                 if self.debug_fullscreen:
                     print(f"[DEBUG] _rebuild_ui: Special mode {saved_text_mode}, not calling show_current_level()")
+                
+                # If in death_ending_final mode, redraw the death ending screen
+                if saved_text_mode == 'death_ending_final':
+                    if hasattr(self, 'current_ending_text') and hasattr(self, 'current_ending_type'):
+                        # Use the saved ending text and type to redraw
+                        self._show_death_ending_black_screen(self.current_ending_text, self.current_ending_type)
+                        if self.debug_fullscreen:
+                            print(f"[DEBUG] _rebuild_ui: Redrew death ending screen (type: {self.current_ending_type})")
+                    else:
+                        if self.debug_fullscreen:
+                            print(f"[DEBUG] _rebuild_ui: Cannot redraw death ending - missing saved data")
         elif self.manager.get_current_level():
             self.show_current_level()
             
@@ -394,11 +480,51 @@ class GUIGameRunnerRedesigned:
                     self.canvas.itemconfig(self.narrative_canvas_text, text="")
                     # Redraw choice buttons on canvas
                     self._show_choice_options()
+        
+        # If settlement modal was open, redraw it on canvas (use saved state)
+        if saved_settlement_modal_open:
+            if self.debug_fullscreen:
+                print(f"[DEBUG] _rebuild_ui: Redrawing settlement modal on canvas (saved state was True)")
+            # Settlement modal is now Canvas-based, need to redraw all elements
+            # First clear any existing settlement modal elements
+            self.canvas.delete("settlement_modal")
+            # Then redraw the settlement modal (it will read pending_settlement_text)
+            self.settlement_modal_open = False  # Reset flag before calling _show_settlement_modal
+            self._show_settlement_modal()
+        
+        # If story modal was open, redraw it
+        if saved_story_modal_open and saved_story_text:
+            if self.debug_fullscreen:
+                print(f"[DEBUG] _rebuild_ui: Redrawing story modal")
+            self._show_story_modal(saved_story_text)
+        
+        # If tools modal was open, redraw it
+        if saved_tools_modal_open:
+            if self.debug_fullscreen:
+                print(f"[DEBUG] _rebuild_ui: Redrawing tools modal")
+            self.canvas.delete("tools_modal")
+            self.tools_modal_open = False  # Reset flag before calling show_tools
+            self.show_tools()
+        
+        # If clues modal was open, redraw it
+        if saved_clues_modal_open:
+            if self.debug_fullscreen:
+                print(f"[DEBUG] _rebuild_ui: Redrawing clues modal")
+            self.canvas.delete("clues_modal")
+            self.clues_modal_open = False  # Reset flag before calling show_clues
+            self.show_clues()
+        
+        # If success modal was open, close it (no need to redraw as it's temporary)
+        if saved_success_modal_open:
+            if self.debug_fullscreen:
+                print(f"[DEBUG] _rebuild_ui: Closing success modal")
+            self.canvas.delete("success_modal")
+            self.success_modal_open = False
     
     def _load_background_for_day(self, day: int):
         """Load the background image for the specified day."""
         # Load day background
-        bg_path = f"Day {day}.PNG"
+        bg_path = f"UI/Day {day}.PNG"
         if os.path.exists(bg_path):
             img = Image.open(bg_path).convert('RGBA')
             img_w, img_h = img.size
@@ -435,8 +561,33 @@ class GUIGameRunnerRedesigned:
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.bg_photo, tags="background")
             self.canvas.tag_lower("background")
         
+        # Load and display DayBar at the top
+        day_bar_path = "UI/DayBar.png"
+        if os.path.exists(day_bar_path):
+            day_bar = Image.open(day_bar_path)
+            original_width = day_bar.width
+            original_height = day_bar.height
+            
+            # DayBar宽度拉伸到显示宽度,高度按比例缩放保持比例
+            bar_width = self.display_width
+            # 保持高度比例 - 基于原始比例计算
+            bar_height = int(original_height * self.scale)
+            
+            day_bar = day_bar.resize((bar_width, bar_height), Image.Resampling.LANCZOS)
+            self.day_bar_photo = ImageTk.PhotoImage(day_bar)
+            
+            # Position at top of the screen
+            if hasattr(self, 'canvas') and self.canvas:
+                self.canvas.delete("daybar")
+                # Center horizontally, place at top
+                x = self.display_width // 2
+                y = bar_height // 2
+                self.canvas.create_image(x, y, image=self.day_bar_photo, tags="daybar")
+                # Keep DayBar above background but below text
+                self.canvas.tag_raise("daybar", "background")
+        
         # Load and display DialogBox at the bottom
-        dialog_box_path = "DialogBox.png"
+        dialog_box_path = "UI/DialogBox.png"
         if os.path.exists(dialog_box_path):
             dialog_box = Image.open(dialog_box_path)
             original_width = dialog_box.width
@@ -497,13 +648,15 @@ class GUIGameRunnerRedesigned:
         
         # Load ending background images
         ending_images = {
-            "LegalFail.png": "legal_fail_pil_image",
-            "LegalSuccess.png": "legal_success_pil_image",
-            "SabotageSuccess.png": "sabotage_success_pil_image",
-            "SabotageFail.png": "sabotage_fail_pil_image",
-            "BreakInToJailFail.png": "breakin_fail_pil_image",
-            "BribeSuccess.png": "bribe_success_pil_image",
-            "BribeFail.png": "bribe_fail_pil_image"
+            "UI/LegalFail.png": "legal_fail_pil_image",
+            "UI/LegalSuccess.png": "legal_success_pil_image",
+            "UI/SabotageSuccess.png": "sabotage_success_pil_image",
+            "UI/SabotageFail.png": "sabotage_fail_pil_image",
+            "UI/BreakInToJailFail.png": "breakin_fail_pil_image",
+            "UI/BribeSuccess.png": "bribe_success_pil_image",
+            "UI/BribeFail.png": "bribe_fail_pil_image",
+            "UI/DeadFail.png": "dead_fail_pil_image",
+            "UI/DeadFailDay9.png": "dead_fail_day9_pil_image"
         }
         
         for img_path, attr_name in ending_images.items():
@@ -514,6 +667,301 @@ class GUIGameRunnerRedesigned:
                     print(f"Warning: {img_path} not found.")
             except Exception as e:
                 print(f"Error loading {img_path}: {e}")
+        
+        # Load ending text UI frame
+        try:
+            ending_text_ui_path = "UI/EndingTextUI.png"
+            if os.path.exists(ending_text_ui_path):
+                self.ending_text_ui_pil = Image.open(ending_text_ui_path).convert('RGBA')
+                print(f"[DEBUG] Loaded EndingTextUI.png successfully")
+            else:
+                self.ending_text_ui_pil = None
+                print(f"Warning: EndingTextUI.png not found.")
+        except Exception as e:
+            self.ending_text_ui_pil = None
+            print(f"Error loading EndingTextUI.png: {e}")
+        
+        # Load story text UI background - Chinese version
+        try:
+            story_text_ui_cn_path = "UI/storytextuichinese.png"
+            if os.path.exists(story_text_ui_cn_path):
+                self.story_text_ui_cn_pil = Image.open(story_text_ui_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded storytextuichinese.png successfully")
+            else:
+                self.story_text_ui_cn_pil = None
+                print(f"Warning: storytextuichinese.png not found.")
+        except Exception as e:
+            self.story_text_ui_cn_pil = None
+            print(f"Error loading storytextuichinese.png: {e}")
+        
+        # Load story text UI background - English version
+        try:
+            story_text_ui_en_path = "UI/storytextui.png"
+            if os.path.exists(story_text_ui_en_path):
+                self.story_text_ui_en_pil = Image.open(story_text_ui_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded storytextui.png successfully")
+            else:
+                self.story_text_ui_en_pil = None
+                print(f"Warning: storytextui.png not found.")
+        except Exception as e:
+            self.story_text_ui_en_pil = None
+            print(f"Error loading storytextui.png: {e}")
+        
+        # Load restart button images (Chinese and English)
+        try:
+            restart_button_cn_path = "UI/RestartButtonChinese.png"
+            if os.path.exists(restart_button_cn_path):
+                self.restart_button_cn_pil = Image.open(restart_button_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded RestartButtonChinese.png successfully")
+            else:
+                self.restart_button_cn_pil = None
+                print(f"Warning: RestartButtonChinese.png not found.")
+        except Exception as e:
+            self.restart_button_cn_pil = None
+            print(f"Error loading RestartButtonChinese.png: {e}")
+        
+        try:
+            restart_button_en_path = "UI/RestartButton.png"
+            if os.path.exists(restart_button_en_path):
+                self.restart_button_en_pil = Image.open(restart_button_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded RestartButton.png successfully")
+            else:
+                self.restart_button_en_pil = None
+                print(f"Warning: RestartButton.png not found.")
+        except Exception as e:
+            self.restart_button_en_pil = None
+            print(f"Error loading RestartButton.png: {e}")
+        
+        # Load settlement background UI images (Chinese and English)
+        try:
+            settlement_bg_cn_path = "UI/settlementtextuichinese.png"
+            if os.path.exists(settlement_bg_cn_path):
+                self.settlement_bg_cn_pil = Image.open(settlement_bg_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded settlementtextuichinese.png successfully")
+            else:
+                self.settlement_bg_cn_pil = None
+                print(f"Warning: settlementtextuichinese.png not found.")
+        except Exception as e:
+            self.settlement_bg_cn_pil = None
+            print(f"Error loading settlementtextuichinese.png: {e}")
+        
+        try:
+            settlement_bg_en_path = "UI/settlementtextui.png"
+            if os.path.exists(settlement_bg_en_path):
+                self.settlement_bg_en_pil = Image.open(settlement_bg_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded settlementtextui.png successfully")
+            else:
+                self.settlement_bg_en_pil = None
+                print(f"Warning: settlementtextui.png not found.")
+        except Exception as e:
+            self.settlement_bg_en_pil = None
+            print(f"Error loading settlementtextui.png: {e}")
+        
+        # Load tools button image (same for both languages)
+        try:
+            tools_btn_path = "UI/ToolsImage.png"
+            if os.path.exists(tools_btn_path):
+                self.tools_btn_pil = Image.open(tools_btn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded ToolsImage.png successfully")
+            else:
+                self.tools_btn_pil = None
+                print(f"Warning: ToolsImage.png not found.")
+        except Exception as e:
+            self.tools_btn_pil = None
+            print(f"Error loading ToolsImage.png: {e}")
+        
+        # Load clues button image (same for both languages)
+        try:
+            clues_btn_path = "UI/cluesimage.png"
+            if os.path.exists(clues_btn_path):
+                self.clues_btn_pil = Image.open(clues_btn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded cluesimage.png successfully")
+            else:
+                self.clues_btn_pil = None
+                print(f"Warning: cluesimage.png not found.")
+        except Exception as e:
+            self.clues_btn_pil = None
+            print(f"Error loading cluesimage.png: {e}")
+        
+        # Load tools modal background - Chinese version
+        try:
+            tools_bg_cn_path = "UI/ToolsTextUIChinese.png"
+            if os.path.exists(tools_bg_cn_path):
+                self.tools_bg_cn_pil = Image.open(tools_bg_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded ToolsTextUIChinese.png successfully")
+            else:
+                self.tools_bg_cn_pil = None
+                print(f"Warning: ToolsTextUIChinese.png not found.")
+        except Exception as e:
+            self.tools_bg_cn_pil = None
+            print(f"Error loading ToolsTextUIChinese.png: {e}")
+        
+        # Load tools modal background - English version
+        try:
+            tools_bg_en_path = "UI/ToolsTextUI.png"
+            if os.path.exists(tools_bg_en_path):
+                self.tools_bg_en_pil = Image.open(tools_bg_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded ToolsTextUI.png successfully")
+            else:
+                self.tools_bg_en_pil = None
+                print(f"Warning: ToolsTextUI.png not found.")
+        except Exception as e:
+            self.tools_bg_en_pil = None
+            print(f"Error loading ToolsTextUI.png: {e}")
+        
+        # Load clues modal background - Chinese version
+        try:
+            clues_bg_cn_path = "UI/CluesTextUIChinese.png"
+            if os.path.exists(clues_bg_cn_path):
+                self.clues_bg_cn_pil = Image.open(clues_bg_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded CluesTextUIChinese.png successfully")
+            else:
+                self.clues_bg_cn_pil = None
+                print(f"Warning: CluesTextUIChinese.png not found.")
+        except Exception as e:
+            self.clues_bg_cn_pil = None
+            print(f"Error loading CluesTextUIChinese.png: {e}")
+        
+        # Load clues modal background - English version
+        try:
+            clues_bg_en_path = "UI/CluesTextUI.png"
+            if os.path.exists(clues_bg_en_path):
+                self.clues_bg_en_pil = Image.open(clues_bg_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded CluesTextUI.png successfully")
+            else:
+                self.clues_bg_en_pil = None
+                print(f"Warning: CluesTextUI.png not found.")
+        except Exception as e:
+            self.clues_bg_en_pil = None
+            print(f"Error loading CluesTextUI.png: {e}")
+        
+        # Load successfully used modal background - Chinese version
+        try:
+            success_bg_cn_path = "UI/SuccessfullyUsedUIChinese.png"
+            if os.path.exists(success_bg_cn_path):
+                self.success_bg_cn_pil = Image.open(success_bg_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded SuccessfullyUsedUIChinese.png successfully")
+            else:
+                self.success_bg_cn_pil = None
+                print(f"Warning: SuccessfullyUsedUIChinese.png not found.")
+        except Exception as e:
+            self.success_bg_cn_pil = None
+            print(f"Error loading SuccessfullyUsedUIChinese.png: {e}")
+        
+        # Load successfully used modal background - English version
+        try:
+            success_bg_en_path = "UI/SuccessfullyUsedUI.png"
+            if os.path.exists(success_bg_en_path):
+                self.success_bg_en_pil = Image.open(success_bg_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded SuccessfullyUsedUI.png successfully")
+            else:
+                self.success_bg_en_pil = None
+                print(f"Warning: SuccessfullyUsedUI.png not found.")
+        except Exception as e:
+            self.success_bg_en_pil = None
+            print(f"Error loading SuccessfullyUsedUI.png: {e}")
+        
+        # Load close button images - Chinese version
+        try:
+            close_btn_cn_path = "UI/CloseUIChinese.png"
+            if os.path.exists(close_btn_cn_path):
+                self.close_btn_cn_pil = Image.open(close_btn_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded CloseUIChinese.png successfully")
+            else:
+                self.close_btn_cn_pil = None
+                print(f"Warning: CloseUIChinese.png not found.")
+        except Exception as e:
+            self.close_btn_cn_pil = None
+            print(f"Error loading CloseUIChinese.png: {e}")
+        
+        # Load close button images - English version
+        try:
+            close_btn_en_path = "UI/CloseUI.png"
+            if os.path.exists(close_btn_en_path):
+                self.close_btn_en_pil = Image.open(close_btn_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded CloseUI.png successfully")
+            else:
+                self.close_btn_en_pil = None
+                print(f"Warning: CloseUI.png not found.")
+        except Exception as e:
+            self.close_btn_en_pil = None
+            print(f"Error loading CloseUI.png: {e}")
+        
+        # Load use button images - Chinese version
+        try:
+            use_btn_cn_path = "UI/UseUIChinese.png"
+            if os.path.exists(use_btn_cn_path):
+                self.use_btn_cn_pil = Image.open(use_btn_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded UseUIChinese.png successfully")
+            else:
+                self.use_btn_cn_pil = None
+                print(f"Warning: UseUIChinese.png not found.")
+        except Exception as e:
+            self.use_btn_cn_pil = None
+            print(f"Error loading UseUIChinese.png: {e}")
+        
+        # Load use button images - English version
+        try:
+            use_btn_en_path = "UI/UseUI.png"
+            if os.path.exists(use_btn_en_path):
+                self.use_btn_en_pil = Image.open(use_btn_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded UseUI.png successfully")
+            else:
+                self.use_btn_en_pil = None
+                print(f"Warning: UseUI.png not found.")
+        except Exception as e:
+            self.use_btn_en_pil = None
+            print(f"Error loading UseUI.png: {e}")
+        
+        # Load language change button images
+        try:
+            lang_btn_cn_path = "UI/LanguageChangeUIChinese.png"
+            if os.path.exists(lang_btn_cn_path):
+                self.lang_btn_cn_pil = Image.open(lang_btn_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded LanguageChangeUIChinese.png successfully")
+            else:
+                self.lang_btn_cn_pil = None
+                print(f"Warning: LanguageChangeUIChinese.png not found.")
+        except Exception as e:
+            self.lang_btn_cn_pil = None
+            print(f"Error loading LanguageChangeUIChinese.png: {e}")
+        
+        try:
+            lang_btn_en_path = "UI/LanguageChangeUI.png"
+            if os.path.exists(lang_btn_en_path):
+                self.lang_btn_en_pil = Image.open(lang_btn_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded LanguageChangeUI.png successfully")
+            else:
+                self.lang_btn_en_pil = None
+                print(f"Warning: LanguageChangeUI.png not found.")
+        except Exception as e:
+            self.lang_btn_en_pil = None
+            print(f"Error loading LanguageChangeUI.png: {e}")
+        
+        # Load continue button images (Chinese and English)
+        try:
+            continue_button_cn_path = "UI/ContinueUIChinese.png"
+            if os.path.exists(continue_button_cn_path):
+                self.continue_button_cn_pil = Image.open(continue_button_cn_path).convert('RGBA')
+                print(f"[DEBUG] Loaded ContinueUIChinese.png successfully")
+            else:
+                self.continue_button_cn_pil = None
+                print(f"Warning: ContinueUIChinese.png not found.")
+        except Exception as e:
+            self.continue_button_cn_pil = None
+            print(f"Error loading ContinueUIChinese.png: {e}")
+        
+        try:
+            continue_button_en_path = "UI/ContinueUI.png"
+            if os.path.exists(continue_button_en_path):
+                self.continue_button_en_pil = Image.open(continue_button_en_path).convert('RGBA')
+                print(f"[DEBUG] Loaded ContinueUI.png successfully")
+            else:
+                self.continue_button_en_pil = None
+                print(f"Warning: ContinueUI.png not found.")
+        except Exception as e:
+            self.continue_button_en_pil = None
+            print(f"Error loading ContinueUI.png: {e}")
         
         # Set topmost
         try:
@@ -529,15 +977,19 @@ class GUIGameRunnerRedesigned:
         
         # Force text elements to top after initial setup
         self.window.after(100, self._ensure_text_visible)
+        
+        # Bind keyboard arrow keys for navigation
+        self.window.bind('<Left>', lambda e: self.prev_sentence())
+        self.window.bind('<Right>', lambda e: self.next_sentence())
     
     def _create_ui_elements(self):
         """Create all UI elements on canvas."""
         # Scale factor for positioning
         s = self.scale
         
-        # Status display at top-left
+        # Status display at top-left (moved down to avoid DayBar)
         status_x = int(50 * s)
-        status_y_start = int(30 * s)
+        status_y_start = int(100 * s)
         
         state = self.manager.state
         
@@ -612,39 +1064,57 @@ class GUIGameRunnerRedesigned:
         
         # Tools and Clues buttons below progress (vertical layout)
         button_start_y = progress_y + int(165 * s)
-        button_spacing_y = int(80 * s)
+        button_spacing_y = int(120 * s)
         
-        # Create button images with text (1/4 size)
-        tools_text = "道具" if self.current_language == "中文" else "Tools"
-        clues_text = "线索" if self.current_language == "中文" else "Clues"
+        # Create tools button photo (use PNG image directly, same for both languages)
+        if self.tools_btn_pil:
+            btn_w = int(self.tools_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(self.tools_btn_pil.height * 0.6 * self.scale)
+            resized_btn = self.tools_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.tools_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new image not found
+            tools_text = "道具" if self.current_language == "中文" else "Tools"
+            self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.6, button_type="tools")
         
-        # Scale buttons to 1/4 of original size
-        self.tools_btn_photo = self._create_button_image("button for tools.png", tools_text, scale_factor=0.25, button_type="tools")
-        self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.25, button_type="clues")
+        # Create clues button photo (use PNG image directly, same for both languages)
+        if self.clues_btn_pil:
+            btn_w = int(self.clues_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(self.clues_btn_pil.height * 0.6 * self.scale)
+            resized_btn = self.clues_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.clues_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new image not found
+            clues_text = "线索" if self.current_language == "中文" else "Clues"
+            self.clues_btn_photo = self._create_button_image("button for clues.png", clues_text, scale_factor=0.6, button_type="clues")
         
-        # Tools button
-        self.tools_button = tk.Button(
-            self.window,
+        # Tools button - use canvas image for transparency support
+        self.tools_button_id = self.canvas.create_image(
+            status_x,
+            button_start_y,
+            anchor=tk.W,
             image=self.tools_btn_photo,
-            command=self._wrap_with_click_sound(self.show_tools),
-            borderwidth=0,
-            highlightthickness=0,
-            bg="black",
-            activebackground="black"
+            tags="tools_button"
         )
-        self.canvas.create_window(status_x, button_start_y, anchor=tk.W, window=self.tools_button)
+        # Bind click event to tools button
+        self.canvas.tag_bind("tools_button", '<Button-1>', 
+            lambda e: self._wrap_with_click_sound(self.show_tools)())
+        self.canvas.tag_bind("tools_button", '<Enter>', lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("tools_button", '<Leave>', lambda e: self.canvas.config(cursor=""))
         
-        # Clues button
-        self.clues_button = tk.Button(
-            self.window,
+        # Clues button - use canvas image for transparency support
+        self.clues_button_id = self.canvas.create_image(
+            status_x,
+            button_start_y + button_spacing_y,
+            anchor=tk.W,
             image=self.clues_btn_photo,
-            command=self._wrap_with_click_sound(self.show_clues),
-            borderwidth=0,
-            highlightthickness=0,
-            bg="black",
-            activebackground="black"
+            tags="clues_button"
         )
-        self.canvas.create_window(status_x, button_start_y + button_spacing_y, anchor=tk.W, window=self.clues_button)
+        # Bind click event to clues button
+        self.canvas.tag_bind("clues_button", '<Button-1>', 
+            lambda e: self._wrap_with_click_sound(self.show_clues)())
+        self.canvas.tag_bind("clues_button", '<Enter>', lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("clues_button", '<Leave>', lambda e: self.canvas.config(cursor=""))
         
         # Day label at top-center (using canvas text for transparent background)
         self.day_text_id = self.canvas.create_text(
@@ -656,20 +1126,32 @@ class GUIGameRunnerRedesigned:
             anchor=tk.N
         )
         
-        # Language button at top-right
-        lang_text = "English" if self.current_language == "中文" else "中文"
-        self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.4)
+        # Language button at top-right (use PNG images directly)
+        lang_btn_pil = self.lang_btn_en_pil if self.current_language == "中文" else self.lang_btn_cn_pil
+        if lang_btn_pil:
+            btn_w = int(lang_btn_pil.width * 0.6 * self.scale)
+            btn_h = int(lang_btn_pil.height * 0.6 * self.scale)
+            resized_btn = lang_btn_pil.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+            self.lang_btn_photo = ImageTk.PhotoImage(resized_btn)
+        else:
+            # Fallback to old method if new images not found
+            lang_text = "English" if self.current_language == "中文" else "中文"
+            self.lang_btn_photo = self._create_button_image("language change.png", lang_text, scale_factor=0.6)
         
-        self.lang_button = tk.Button(
-            self.window,
+        # Language button - use canvas image for transparency support
+        lang_btn_x = self.display_width - int(100 * s)
+        lang_btn_y = int(130 * s)
+        self.lang_button_id = self.canvas.create_image(
+            lang_btn_x,
+            lang_btn_y,
             image=self.lang_btn_photo,
-            command=self._wrap_with_click_sound(self.toggle_language),
-            borderwidth=0,
-            highlightthickness=0,
-            bg="black",
-            activebackground="black"
+            tags="lang_button"
         )
-        self.canvas.create_window(self.display_width - int(40 * s), int(30 * s), window=self.lang_button)
+        # Bind click event to language button
+        self.canvas.tag_bind("lang_button", '<Button-1>', 
+            lambda e: self._wrap_with_click_sound(self.toggle_language)())
+        self.canvas.tag_bind("lang_button", '<Enter>', lambda e: self.canvas.config(cursor="hand2"))
+        self.canvas.tag_bind("lang_button", '<Leave>', lambda e: self.canvas.config(cursor=""))
         
         # Narrative text area in DialogBox (bottom area) - use canvas text instead of Text widget
         text_y = self.display_height - int(200 * s)
@@ -696,14 +1178,14 @@ class GUIGameRunnerRedesigned:
         
         # Left/Right navigation buttons using images
         # Left button: position from bottom-left corner
-        # Original coordinates at 1920x1080: x=120, y=10 from bottom-left
+        # Original coordinates at 1920x1080: x=120, y=90 from bottom-left (moved up from 50)
         # Calculate scaled position
         left_x = int(120 * s)
-        left_y = self.display_height - int(10 * s)
+        left_y = self.display_height - int(90 * s)
         
         # Load and create left button image (scale to 1/16 of original size)
-        if os.path.exists("Left.png"):
-            left_img = Image.open("Left.png").convert('RGBA')
+        if os.path.exists("UI/Left.png"):
+            left_img = Image.open("UI/Left.png").convert('RGBA')
             # Scale to 1/16 (multiply by s for screen scaling and 0.25 for size reduction to 1/16)
             left_scaled_w = int(left_img.width * s * 0.25)
             left_scaled_h = int(left_img.height * s * 0.25)
@@ -726,8 +1208,8 @@ class GUIGameRunnerRedesigned:
         right_y = left_y
         
         # Load and create right button image (scale to 1/16 of original size)
-        if os.path.exists("Right.png"):
-            right_img = Image.open("Right.png").convert('RGBA')
+        if os.path.exists("UI/Right.png"):
+            right_img = Image.open("UI/Right.png").convert('RGBA')
             # Scale to 1/16 (multiply by s for screen scaling and 0.25 for size reduction to 1/16)
             right_scaled_w = int(right_img.width * s * 0.25)
             right_scaled_h = int(right_img.height * s * 0.25)
@@ -794,9 +1276,12 @@ class GUIGameRunnerRedesigned:
             print("[DEBUG] Reached end of narrative, calling _show_choice_options()")
             self._show_choice_options()
         elif self.text_display_mode == 'result':
-            # Finished result text, show settlement modal
-            print("[DEBUG] Reached end of result, calling _show_settlement_modal()")
-            self._show_settlement_modal()
+            # Finished result text, show settlement modal (only once)
+            if not self.settlement_modal_open:
+                print("[DEBUG] Reached end of result, calling _show_settlement_modal()")
+                self._show_settlement_modal()
+            else:
+                print("[DEBUG] Settlement modal already open, ignoring next_sentence")
         elif self.text_display_mode == 'result_before_ending':
             # Finished result text, now show ending text on black screen
             print("[DEBUG] Reached end of result, transitioning to death ending")
@@ -957,6 +1442,9 @@ class GUIGameRunnerRedesigned:
     
     def _show_settlement_modal(self):
         """Show settlement modal after result text is complete."""
+        # Set flag to prevent duplicate modal
+        self.settlement_modal_open = True
+        
         state = self.manager.state
         
         # Build settlement text from pending settlement data
@@ -1038,60 +1526,152 @@ class GUIGameRunnerRedesigned:
         print(settlement_text)
         print("=" * 50)
         
-        # Create modal
-        modal = tk.Toplevel(self.window)
-        modal.title("系统结算" if self.current_language == "中文" else "Settlement")
-        modal.geometry("700x430")
-        modal.configure(bg="black")
-        modal.transient(self.window)
-        modal.grab_set()
+        # Show settlement modal directly on canvas (like story modal)
+        # Calculate modal size based on scale (increased from 700x500 to 900x650)
+        modal_width = int(900 * self.scale)
+        modal_height = int(650 * self.scale)
         
-        # Center the modal
-        modal.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (700 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (430 // 2)
-        modal.geometry(f"700x430+{x}+{y}")
+        # Calculate center position on main canvas
+        center_x = self.display_width // 2
+        center_y = self.display_height // 2
         
-        # Settlement text
-        text_widget = tk.Text(
-            modal,
-            width=70,
-            height=15,
-            font=tkfont.Font(family="微软雅黑", size=12),
-            bg="black",
-            fg="white",
-            wrap=tk.WORD,
-            state=tk.NORMAL
+        # Draw semi-transparent overlay background (darken the game)
+        self.settlement_overlay = self.canvas.create_rectangle(
+            0, 0, self.display_width, self.display_height,
+            fill="black", stipple="gray50", tags="settlement_modal"
         )
-        text_widget.pack(padx=20, pady=20)
-        text_widget.insert("1.0", settlement_text)
-        text_widget.config(state=tk.DISABLED)
         
-        # Continue button
-        def on_continue():
-            self._play_click_sound()
-            modal.destroy()
-            self.continue_game()
+        # Select appropriate settlement background based on language
+        settlement_bg_pil = self.settlement_bg_cn_pil if self.current_language == "中文" else self.settlement_bg_en_pil
+        settlement_bg_name = "settlementtextuichinese.png" if self.current_language == "中文" else "settlementtextui.png"
         
-        print(f"[DEBUG] Creating continue button with enlarged size")
-        continue_btn = tk.Button(
-            modal,
-            text="继续" if self.current_language == "中文" else "Continue",
-            font=tkfont.Font(family="微软雅黑", size=9),  # Reduced to 9 to fit completely
-            command=on_continue,
-            width=8,  # Increased width from 6 to 8
-            height=3
+        # Draw settlement background if available
+        if settlement_bg_pil:
+            try:
+                # Resize to fit modal size with scale
+                resized_bg = settlement_bg_pil.resize((modal_width, modal_height), Image.Resampling.LANCZOS)
+                self.settlement_bg_photo = ImageTk.PhotoImage(resized_bg)
+                
+                # Draw the UI frame image at center
+                self.settlement_frame_image = self.canvas.create_image(
+                    center_x, center_y,
+                    image=self.settlement_bg_photo,
+                    tags="settlement_modal"
+                )
+                print(f"[DEBUG] {settlement_bg_name} displayed on canvas at ({center_x}, {center_y}), size {modal_width}x{modal_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display {settlement_bg_name}: {e}")
+        
+        # Create text on canvas (centered)
+        text_font = tkfont.Font(family="微软雅黑", size=int(14 * self.scale))
+        max_width = int(600 * self.scale)
+        
+        self.settlement_text_id = self.canvas.create_text(
+            center_x, int(center_y - 50 * self.scale),
+            text=settlement_text,
+            fill="white",
+            font=text_font,
+            width=max_width,
+            justify="left",
+            tags="settlement_modal"
         )
-        continue_btn.pack(pady=10)
         
-        # Force update to get actual size
-        modal.update_idletasks()
-        btn_width = continue_btn.winfo_width()
-        btn_height = continue_btn.winfo_height()
-        print(f"[DEBUG] Button actual size: width={btn_width}px, height={btn_height}px")
+        # Select appropriate continue button image based on language
+        continue_button_pil = self.continue_button_cn_pil if self.current_language == "中文" else self.continue_button_en_pil
         
-        # Wait for modal to close
-        modal.wait_window()
+        # Display continue button image if available
+        if continue_button_pil:
+            try:
+                # Use button image at scaled size
+                btn_img = continue_button_pil.copy()
+                btn_w = int(btn_img.width * 0.6 * self.scale)
+                btn_h = int(btn_img.height * 0.6 * self.scale)
+                btn_img = btn_img.resize((btn_w, btn_h), Image.Resampling.LANCZOS)
+                self.settlement_btn_photo = ImageTk.PhotoImage(btn_img)
+                
+                # Create clickable button image on canvas
+                btn_y = int(center_y + 250 * self.scale)
+                self.settlement_btn_id = self.canvas.create_image(
+                    center_x, btn_y,
+                    image=self.settlement_btn_photo,
+                    tags="settlement_modal"
+                )
+                
+                # Store button info for press effect
+                self.settlement_btn_center_x = center_x
+                self.settlement_btn_center_y = btn_y
+                self.settlement_btn_original_x = center_x
+                self.settlement_btn_original_y = btn_y
+                self.settlement_btn_width = btn_w
+                self.settlement_btn_height = btn_h
+                self.settlement_btn_pressed = False
+                
+                print(f"[DEBUG] Continue button displayed at ({center_x}, {btn_y}), size {btn_w}x{btn_h}")
+                
+                # Continue button handler with press effect (like other UI buttons)
+                def on_continue_press(event):
+                    canvas_x = event.x
+                    canvas_y = event.y
+                    
+                    # Expand hit area by 20 pixels on each side for easier clicking
+                    hit_padding = int(20 * self.scale)
+                    
+                    # Check if click is in the button area (with expanded padding)
+                    if (abs(canvas_x - self.settlement_btn_center_x) <= self.settlement_btn_width // 2 + hit_padding and 
+                        abs(canvas_y - self.settlement_btn_center_y) <= self.settlement_btn_height // 2 + hit_padding):
+                        if not self.settlement_btn_pressed:
+                            # Move button to right-bottom for press effect
+                            offset_x = int(2 * self.scale)
+                            offset_y = int(2 * self.scale)
+                            self.canvas.move(self.settlement_btn_id, offset_x, offset_y)
+                            self.settlement_btn_center_x += offset_x
+                            self.settlement_btn_center_y += offset_y
+                            self.settlement_btn_pressed = True
+                
+                def on_continue_release(event):
+                    canvas_x = event.x
+                    canvas_y = event.y
+                    
+                    # If button was pressed, restore it
+                    if self.settlement_btn_pressed:
+                        # Move button back to original position
+                        offset_x = self.settlement_btn_center_x - self.settlement_btn_original_x
+                        offset_y = self.settlement_btn_center_y - self.settlement_btn_original_y
+                        self.canvas.move(self.settlement_btn_id, -offset_x, -offset_y)
+                        self.settlement_btn_center_x = self.settlement_btn_original_x
+                        self.settlement_btn_center_y = self.settlement_btn_original_y
+                        self.settlement_btn_pressed = False
+                        
+                        # Expand hit area for release detection
+                        hit_padding = int(20 * self.scale)
+                        
+                        # Check if release is in the button area (trigger action)
+                        if (abs(canvas_x - self.settlement_btn_center_x) <= self.settlement_btn_width // 2 + hit_padding and 
+                            abs(canvas_y - self.settlement_btn_center_y) <= self.settlement_btn_height // 2 + hit_padding):
+                            print(f"[DEBUG] Continue button clicked at canvas ({canvas_x}, {canvas_y})")
+                            self._close_settlement_modal()
+                
+                # Bind press and release events to canvas for button effect
+                self.canvas.bind("<Button-1>", on_continue_press)
+                self.canvas.bind("<ButtonRelease-1>", on_continue_release)
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to display continue button: {e}")
+    
+    def _close_settlement_modal(self):
+        """Close the settlement modal and continue game."""
+        self._play_click_sound()
+        self.settlement_modal_open = False
+        
+        # Remove all settlement modal elements from canvas
+        self.canvas.delete("settlement_modal")
+        
+        # Unbind the click events
+        self.canvas.unbind("<Button-1>")
+        self.canvas.unbind("<ButtonRelease-1>")
+        
+        # Continue the game
+        self.continue_game()
     
     def start_game(self):
         """Start the game by showing story background modal, then first level."""
@@ -1129,68 +1709,97 @@ class GUIGameRunnerRedesigned:
             self.show_current_level()
     
     def _show_story_modal(self, text: str):
-        """Show story background modal with confirm button."""
-        modal = tk.Toplevel(self.window)
-        modal.title("故事背景" if self.current_language == "中文" else "Story Background")
-        modal.geometry("800x600")
-        modal.configure(bg="black")
-        modal.transient(self.window)
-        # Don't grab_set to allow language button clicks
-        # modal.grab_set()
-        
-        # Save modal reference and set flag
-        self.story_modal = modal
+        """Show story background modal with language-specific background directly on canvas."""
+        # Set flag
         self.story_modal_open = True
         
-        # Center the modal
-        modal.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (800 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (600 // 2)
-        modal.geometry(f"800x600+{x}+{y}")
+        # Calculate modal size based on scale (adaptive sizing) - larger size
+        modal_width = int(1000 * self.scale)
+        modal_height = int(750 * self.scale)
         
-        # Story text
-        text_widget = tk.Text(
-            modal,
-            width=80,
-            height=25,
-            font=tkfont.Font(family="微软雅黑", size=14),
-            bg="black",
-            fg="white",
-            wrap=tk.WORD,
-            state=tk.NORMAL
+        # Calculate center position on main canvas
+        center_x = self.display_width // 2
+        center_y = self.display_height // 2
+        
+        # Draw semi-transparent overlay background (darken the game)
+        self.story_overlay = self.canvas.create_rectangle(
+            0, 0, self.display_width, self.display_height,
+            fill="black", stipple="gray50", tags="story_modal"
         )
-        text_widget.pack(padx=20, pady=20)
-        text_widget.insert("1.0", text)
-        text_widget.config(state=tk.DISABLED)
         
-        # Confirm button
-        def on_confirm():
-            self._play_click_sound()
-            self.story_modal_open = False
-            self.story_modal = None
-            modal.destroy()
-            # Exit fullscreen then re-enter to refresh UI (minimal delay)
-            self.window.after(10, self._refresh_fullscreen_and_show)
+        # Select background based on current language
+        story_text_ui_pil = self.story_text_ui_cn_pil if self.current_language == "中文" else self.story_text_ui_en_pil
         
-        # Handle modal close
-        def on_close():
-            self._play_click_sound()
-            self.story_modal_open = False
-            self.story_modal = None
-            modal.destroy()
-            self.window.after(10, self._refresh_fullscreen_and_show)
+        # Load and display story background if available
+        if story_text_ui_pil:
+            try:
+                # Resize to fit modal size with scale
+                resized_story_ui = story_text_ui_pil.resize((modal_width, modal_height), Image.Resampling.LANCZOS)
+                self.story_ui_photo = ImageTk.PhotoImage(resized_story_ui)  # Store as instance variable
+                
+                # Draw the UI frame image at center
+                self.story_frame_image = self.canvas.create_image(
+                    center_x, center_y, 
+                    image=self.story_ui_photo,
+                    tags="story_modal"
+                )
+                bg_filename = "storytextuichinese.png" if self.current_language == "中文" else "storytextui.png"
+                print(f"[DEBUG] Story background {bg_filename} displayed on canvas at ({center_x}, {center_y}), size {modal_width}x{modal_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display story background: {e}")
+        else:
+            print(f"[WARNING] Story background not loaded for language: {self.current_language}")
         
-        modal.protocol("WM_DELETE_WINDOW", on_close)
+        # Create text on canvas (centered)
+        text_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
+        max_width = int(900 * self.scale)
         
-        confirm_btn = tk.Button(
-            modal,
-            text="确认" if self.current_language == "中文" else "Confirm",
-            font=tkfont.Font(family="微软雅黑", size=16),
-            command=on_confirm,
-            width=15,
-            height=2
+        self.story_text_id = self.canvas.create_text(
+            center_x, center_y,
+            text=text,
+            fill="white",
+            font=text_font,
+            width=max_width,
+            justify="center",
+            tags="story_modal"
         )
-        confirm_btn.pack(pady=10)
+        
+        # Handle modal close - click on top-right corner area (close button area)
+        def on_canvas_click(event):
+            # Get canvas coordinates
+            canvas_x = event.x
+            canvas_y = event.y
+            
+            # Calculate close button area (top-right of the modal frame) - larger area
+            close_area_size = int(120 * self.scale)
+            frame_left = center_x - modal_width // 2
+            frame_top = center_y - modal_height // 2
+            frame_right = center_x + modal_width // 2
+            
+            # Check if click is in the close button area (top-right corner of frame)
+            if (canvas_x >= frame_right - close_area_size and 
+                canvas_x <= frame_right and
+                canvas_y >= frame_top and 
+                canvas_y <= frame_top + close_area_size):
+                print(f"[DEBUG] Close button clicked at canvas ({canvas_x}, {canvas_y})")
+                self._close_story_modal()
+        
+        # Bind click event to canvas
+        self.canvas.bind("<Button-1>", on_canvas_click)
+    
+    def _close_story_modal(self):
+        """Close the story modal and restore game state."""
+        self._play_click_sound()
+        self.story_modal_open = False
+        
+        # Remove all story modal elements from canvas
+        self.canvas.delete("story_modal")
+        
+        # Unbind the click event
+        self.canvas.unbind("<Button-1>")
+        
+        # Exit fullscreen then re-enter to refresh UI (minimal delay)
+        self.window.after(10, self._refresh_fullscreen_and_show)
         
         # Don't wait_window to allow language switching
         # modal.wait_window()
@@ -1244,6 +1853,9 @@ class GUIGameRunnerRedesigned:
         """Display the current day's narrative and choices."""
         state = self.manager.state
         current_day = self.manager.current_day
+        
+        # Reset settlement modal flag when starting a new day
+        self.settlement_modal_open = False
         
         # Load background for current day
         self._load_background_for_day(current_day)
@@ -1621,13 +2233,13 @@ class GUIGameRunnerRedesigned:
         print("[DEBUG] Showing Day56 transition screen")
         
         # Load Day 56 background if exists, otherwise use day 5 background
-        day56_path = "Day 56.PNG"
+        day56_path = "UI/Day 56.PNG"
         if os.path.exists(day56_path):
             print(f"[DEBUG] Loading Day 56 background from {day56_path}")
             background_image = Image.open(day56_path)
         else:
             # Try to load day 5 background
-            bg_path = os.path.join("normalized_backgrounds", "5 day.png")
+            bg_path = os.path.join("UI", "normalized_backgrounds", "5 day.png")
             if os.path.exists(bg_path):
                 print(f"[DEBUG] Loading Day 5 background from {bg_path}")
                 background_image = Image.open(bg_path)
@@ -1665,8 +2277,27 @@ class GUIGameRunnerRedesigned:
             print("[DEBUG] Recreating UI elements")
             self._create_ui_elements()
             
+            # Load DayBar at the top
+            day_bar_path = "UI/DayBar.png"
+            if os.path.exists(day_bar_path):
+                day_bar = Image.open(day_bar_path)
+                original_width = day_bar.width
+                original_height = day_bar.height
+                
+                # DayBar宽度拉伸到显示宽度,高度按比例缩放
+                bar_width = self.display_width
+                bar_height = int(original_height * self.scale)
+                
+                day_bar = day_bar.resize((bar_width, bar_height), Image.Resampling.LANCZOS)
+                self.day_bar_photo = ImageTk.PhotoImage(day_bar)
+                
+                # Position at top of the screen
+                x = self.display_width // 2
+                y = bar_height // 2
+                self.canvas.create_image(x, y, image=self.day_bar_photo, tags="daybar")
+            
             # Load DialogBox for text display
-            dialog_box_path = "DialogBox.png"
+            dialog_box_path = "UI/DialogBox.png"
             if os.path.exists(dialog_box_path):
                 dialog_box = Image.open(dialog_box_path)
                 original_width = dialog_box.width
@@ -1748,7 +2379,118 @@ class GUIGameRunnerRedesigned:
         button_x = self.display_width // 2
         button_y = int(self.display_height * 0.9)
         
-        # Create restart button
+        # Select appropriate button image based on language
+        restart_button_pil = self.restart_button_cn_pil if self.current_language == "中文" else self.restart_button_en_pil
+        button_name = "RestartButtonChinese.png" if self.current_language == "中文" else "RestartButton.png"
+        
+        # Use image button if available, otherwise fallback to text button
+        if restart_button_pil:
+            try:
+                # Scale the button image appropriately (keep original size or scale slightly)
+                # Original button size, scaled by self.scale
+                button_width = int(restart_button_pil.width * self.scale * 0.8)
+                button_height = int(restart_button_pil.height * self.scale * 0.8)
+                
+                # Resize while preserving transparency (RGBA)
+                resized_button = restart_button_pil.resize(
+                    (button_width, button_height), 
+                    Image.Resampling.LANCZOS
+                )
+                
+                # Convert to PhotoImage (preserves transparency)
+                self.restart_button_photo = ImageTk.PhotoImage(resized_button)
+                
+                # Create image on canvas
+                button_image_id = self.canvas.create_image(
+                    button_x, button_y,
+                    image=self.restart_button_photo,
+                    tags="restart_button"
+                )
+                
+                # Store button info for press effect
+                self.restart_btn_center_x = button_x
+                self.restart_btn_center_y = button_y
+                self.restart_btn_original_x = button_x
+                self.restart_btn_original_y = button_y
+                self.restart_btn_width = button_width
+                self.restart_btn_height = button_height
+                self.restart_btn_pressed = False
+                self.restart_btn_id = button_image_id
+                
+                print(f"[DEBUG] {button_name} displayed at ({button_x}, {button_y})")
+                
+                # Restart button handler with press effect
+                def on_restart_press(event):
+                    canvas_x = event.x
+                    canvas_y = event.y
+                    
+                    # Expand hit area by 20 pixels on each side for easier clicking
+                    hit_padding = int(20 * self.scale)
+                    
+                    # Check if click is in the button area (with expanded padding)
+                    if (abs(canvas_x - self.restart_btn_center_x) <= self.restart_btn_width // 2 + hit_padding and 
+                        abs(canvas_y - self.restart_btn_center_y) <= self.restart_btn_height // 2 + hit_padding):
+                        if not self.restart_btn_pressed:
+                            # Move button to right-bottom for press effect
+                            offset_x = int(2 * self.scale)
+                            offset_y = int(2 * self.scale)
+                            self.canvas.move(self.restart_btn_id, offset_x, offset_y)
+                            self.restart_btn_center_x += offset_x
+                            self.restart_btn_center_y += offset_y
+                            self.restart_btn_pressed = True
+                
+                def on_restart_release(event):
+                    canvas_x = event.x
+                    canvas_y = event.y
+                    
+                    # If button was pressed, restore it
+                    if self.restart_btn_pressed:
+                        # Move button back to original position
+                        offset_x = self.restart_btn_center_x - self.restart_btn_original_x
+                        offset_y = self.restart_btn_center_y - self.restart_btn_original_y
+                        self.canvas.move(self.restart_btn_id, -offset_x, -offset_y)
+                        self.restart_btn_center_x = self.restart_btn_original_x
+                        self.restart_btn_center_y = self.restart_btn_original_y
+                        self.restart_btn_pressed = False
+                        
+                        # Expand hit area for release detection
+                        hit_padding = int(20 * self.scale)
+                        
+                        # Check if release is in the button area (trigger action)
+                        if (abs(canvas_x - self.restart_btn_center_x) <= self.restart_btn_width // 2 + hit_padding and 
+                            abs(canvas_y - self.restart_btn_center_y) <= self.restart_btn_height // 2 + hit_padding):
+                            # Play click sound
+                            if self.audio_manager:
+                                self.audio_manager.play_click()
+                            
+                            print("[DEBUG] Restarting game...")
+                            # Reset game state
+                            from game.state import GameState
+                            self.manager.state = GameState()
+                            self.manager.current_day = 1
+                            # Unbind events before clearing canvas
+                            self.canvas.unbind("<Button-1>")
+                            self.canvas.unbind("<ButtonRelease-1>")
+                            # Clear canvas and restart
+                            self.canvas.delete("all")
+                            self._load_background_for_day(1)
+                            self._create_ui_elements()
+                            self.show_current_level()
+                
+                # Bind press and release events
+                self.canvas.bind("<Button-1>", on_restart_press)
+                self.canvas.bind("<ButtonRelease-1>", on_restart_release)
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to display {button_name}: {e}")
+                # Fallback to text button
+                self._show_text_restart_button(button_x, button_y)
+        else:
+            # Fallback to text button if image not loaded
+            self._show_text_restart_button(button_x, button_y)
+    
+    def _show_text_restart_button(self, button_x, button_y):
+        """Fallback text-based restart button."""
         restart_text = "重新开始" if self.current_language == "中文" else "Restart"
         button_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
         
@@ -1769,21 +2511,6 @@ class GUIGameRunnerRedesigned:
             font=button_font,
             tags="restart_button"
         )
-        
-        # Bind click event to restart game
-        def restart_game(event):
-            print("[DEBUG] Restarting game...")
-            # Reset game state
-            from game.state import GameState
-            self.manager.state = GameState()
-            self.manager.current_day = 1
-            # Clear canvas and restart
-            self.canvas.delete("all")
-            self._load_background_for_day(1)
-            self._create_ui_elements()
-            self.show_current_level()
-        
-        self.canvas.tag_bind("restart_button", "<Button-1>", restart_game)
     
     def _show_death_ending_black_screen(self, ending_text: str, death_type: str = 'custom'):
         """Transition from normal game screen to black screen death ending.
@@ -1803,14 +2530,19 @@ class GUIGameRunnerRedesigned:
         self.canvas.delete("all")
         
         # Define ending patterns with their corresponding background images
+        # Format: (Chinese name, English name, image, filename)
         ending_patterns = [
-            ("焰下之誓", "Oath Under the Flame", self.legal_fail_pil_image, "LegalFail.png"),
-            ("赦令幻象", "Illusion of Pardon", self.legal_success_pil_image, "LegalSuccess.png"),
-            ("铁之路", "Iron Path", self.sabotage_success_pil_image, "SabotageSuccess.png"),
-            ("坠灰者", "Fallen to Ash", self.sabotage_fail_pil_image, "SabotageFail.png"),
-            ("隐火之谋", "Hidden Fire Plot", self.breakin_fail_pil_image, "BreakInToJailFail.png"),
-            ("金钥之门", "Golden Key Gate", self.bribe_success_pil_image, "BribeSuccess.png"),
-            ("苦役之血", "Blood of Hard Labor", self.bribe_fail_pil_image, "BribeFail.png")
+            ("真理之死", "Death of Truth", self.dead_fail_day9_pil_image, "DeadFailDay9.png"),
+            ("焰下之誓", "Oath Under Fire", self.legal_fail_pil_image, "LegalFail.png"),
+            ("赦令幻象", "Pardon Illusion", self.legal_success_pil_image, "LegalSuccess.png"),
+            ("铁之路", "Iron Road", self.sabotage_success_pil_image, "SabotageSuccess.png"),
+            ("坠灰者", "Grey Falling", self.sabotage_fail_pil_image, "SabotageFail.png"),
+            ("隐火之谋", "Concealed Fire", self.breakin_fail_pil_image, "BreakInToJailFail.png"),
+            ("金钥之门", "Key Gate", self.bribe_success_pil_image, "BribeSuccess.png"),
+            ("苦役之血", "Hard Labor", self.bribe_fail_pil_image, "BribeFail.png"),
+            ("躯壳之蚀", "Erosion of the Body", self.dead_fail_pil_image, "DeadFail.png"),
+            ("法脉枯竭", "Pulse Exhausted", self.dead_fail_pil_image, "DeadFail.png"),
+            ("双烬", "Double Ember", self.dead_fail_pil_image, "DeadFail.png")
         ]
         
         bg_drawn = False
@@ -1843,6 +2575,37 @@ class GUIGameRunnerRedesigned:
         text_x = self.display_width // 2
         text_y = self.display_height // 2 - int(50 * self.scale)
         
+        # Draw EndingTextUI frame behind the text (if available)
+        if self.ending_text_ui_pil:
+            try:
+                # Scale the UI frame appropriately
+                ui_width = int(self.ending_text_ui_pil.width * self.scale * 1.2)
+                ui_height = int(self.ending_text_ui_pil.height * self.scale * 1.2)
+                
+                # Resize while preserving transparency
+                resized_ui = self.ending_text_ui_pil.resize(
+                    (ui_width, ui_height),
+                    Image.Resampling.LANCZOS
+                )
+                
+                # Convert to PhotoImage
+                self.ending_text_ui_photo = ImageTk.PhotoImage(resized_ui)
+                
+                # Position UI frame at center (move up a bit)
+                ui_x = self.display_width // 2
+                ui_y = self.display_height // 2 - int(80 * self.scale)
+                
+                # Draw UI frame
+                self.canvas.create_image(
+                    ui_x, ui_y,
+                    image=self.ending_text_ui_photo,
+                    tags="ending_ui_frame"
+                )
+                
+                print(f"[DEBUG] EndingTextUI.png displayed at ({ui_x}, {ui_y})")
+            except Exception as e:
+                print(f"[ERROR] Failed to display EndingTextUI.png: {e}")
+        
         # Use same font size as day number display (18)
         text_size = int(18 * self.scale)
         text_font = tkfont.Font(family="微软雅黑", size=text_size)
@@ -1855,7 +2618,7 @@ class GUIGameRunnerRedesigned:
             fill="white",
             font=text_font,
             width=max_width,
-            justify="left",
+            justify="center",
             tags="death_ending_text"
         )
         
@@ -1883,6 +2646,17 @@ class GUIGameRunnerRedesigned:
         if self.result_popup:
             self.result_popup.destroy()
             self.result_popup = None
+        
+        # Check for death conditions FIRST (before any day progression)
+        state = self.manager.state
+        death_ending_text = self.csv_loader.get_death_ending(state.stamina, state.mana)
+        
+        if death_ending_text:
+            # Player has died - show death ending and stop progression
+            print(f"[DEBUG] Death condition detected - Stamina: {state.stamina}, Mana: {state.mana}")
+            print(f"[DEBUG] Death ending text: {death_ending_text[:100]}...")
+            self._show_death_ending_black_screen(death_ending_text, death_type='death')
+            return
         
         current_day = self.manager.current_day
         
@@ -1916,52 +2690,339 @@ class GUIGameRunnerRedesigned:
             self.show_current_level()
     
     def show_tools(self):
-        """Show tools inventory."""
+        """Show tools inventory modal with language-specific background directly on canvas."""
+        # Set flag
+        self.tools_modal_open = True
+        
         state = self.manager.state
         # Use inventory as source for tools/items
         tools = state.inventory or []
         
-        popup = tk.Toplevel(self.window)
-        popup.title("道具" if self.current_language == "中文" else "Tools")
-        popup.geometry("450x350")
-        popup.configure(bg="white")
-        popup.transient(self.window)
+        # Calculate modal size based on scale (800x600 - larger size)
+        modal_width = int(800 * self.scale)
+        modal_height = int(600 * self.scale)
         
-        # Center the popup
-        popup.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (450 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (350 // 2)
-        popup.geometry(f"450x350+{x}+{y}")
+        # Calculate center position on main canvas
+        center_x = self.display_width // 2
+        center_y = self.display_height // 2
         
-        # Create frame for items
-        frame = tk.Frame(popup, bg="white")
-        frame.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+        # Draw semi-transparent overlay background (darken the game)
+        self.tools_overlay = self.canvas.create_rectangle(
+            0, 0, self.display_width, self.display_height,
+            fill="black", stipple="gray50", tags="tools_modal"
+        )
+        
+        # Select background based on current language
+        tools_bg_pil = self.tools_bg_cn_pil if self.current_language == "中文" else self.tools_bg_en_pil
+        
+        # Load and display tools background if available
+        if tools_bg_pil:
+            try:
+                # Resize to fit modal size with scale
+                resized_tools_bg = tools_bg_pil.resize((modal_width, modal_height), Image.Resampling.LANCZOS)
+                self.tools_bg_photo = ImageTk.PhotoImage(resized_tools_bg)  # Store as instance variable
+                
+                # Draw the UI frame image at center
+                self.tools_frame_image = self.canvas.create_image(
+                    center_x, center_y, 
+                    image=self.tools_bg_photo,
+                    tags="tools_modal"
+                )
+                bg_filename = "ToolsTextUIChinese.png" if self.current_language == "中文" else "ToolsTextUI.png"
+                print(f"[DEBUG] Tools background {bg_filename} displayed on canvas at ({center_x}, {center_y}), size {modal_width}x{modal_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display tools background: {e}")
+        else:
+            print(f"[WARNING] Tools background not loaded for language: {self.current_language}")
+        
+        # Create text content on canvas (left-aligned)
+        text_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
+        
+        # Position text on the left side of the modal
+        text_x = center_x - modal_width // 2 + int(50 * self.scale)
+        text_y = center_y - modal_height // 2 + int(120 * self.scale)
         
         if not tools:
-            no_tools_label = tk.Label(frame, text="无道具" if self.current_language == "中文" else "No tools",
-                                     font=tkfont.Font(family="微软雅黑", size=12), bg="white")
-            no_tools_label.pack(pady=20)
+            tools_text = "无道具" if self.current_language == "中文" else "No tools"
+            self.tools_text_id = self.canvas.create_text(
+                text_x, text_y,
+                text=tools_text,
+                fill="white",
+                font=text_font,
+                anchor="nw",
+                tags="tools_modal"
+            )
         else:
-            # Display each tool with use button if applicable
-            for tool in tools:
-                tool_frame = tk.Frame(frame, bg="white")
-                tool_frame.pack(fill=tk.X, pady=5, padx=5)
-                
-                tool_label = tk.Label(tool_frame, text=tool, font=tkfont.Font(family="微软雅黑", size=12),
-                                    bg="white", anchor=tk.W)
-                tool_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            # Display each tool as separate text with use button for blood potion
+            y_offset = text_y
+            for i, tool in enumerate(tools):
+                tool_text_id = self.canvas.create_text(
+                    text_x, y_offset,
+                    text=f"{i+1}. {tool}",
+                    fill="white",
+                    font=text_font,
+                    anchor="nw",
+                    tags="tools_modal"
+                )
                 
                 # Add use button for blood potion
                 if "血息药剂" in tool or "Blood Potion" in tool:
-                    use_btn = tk.Button(tool_frame, 
-                                      text="使用" if self.current_language == "中文" else "Use",
-                                      font=tkfont.Font(family="微软雅黑", size=10),
-                                      command=lambda t=tool, p=popup: self._wrap_with_click_sound(lambda: self._use_blood_potion(t, p))())
-                    use_btn.pack(side=tk.RIGHT, padx=5)
+                    # Select use button image based on language
+                    use_btn_pil = self.use_btn_cn_pil if self.current_language == "中文" else self.use_btn_en_pil
+                    
+                    if use_btn_pil:
+                        # Scale button to appropriate size (larger for better visibility)
+                        btn_scale = 1.0 * self.scale
+                        btn_width = int(use_btn_pil.width * btn_scale)
+                        btn_height = int(use_btn_pil.height * btn_scale)
+                        
+                        # Position button on the right side with fixed distance from right edge
+                        # Calculate button x position: right edge - fixed margin
+                        right_margin = int(50 * self.scale)
+                        btn_x = center_x + modal_width // 2 - right_margin - btn_width // 2
+                        btn_y = y_offset + int(15 * self.scale)  # Center vertically with text
+                        
+                        # Resize and create button image
+                        resized_use_btn = use_btn_pil.resize((btn_width, btn_height), Image.Resampling.LANCZOS)
+                        use_btn_photo = ImageTk.PhotoImage(resized_use_btn)
+                        
+                        # Store photo reference to prevent garbage collection
+                        if not hasattr(self, 'use_btn_photos'):
+                            self.use_btn_photos = []
+                        self.use_btn_photos.append(use_btn_photo)
+                        
+                        # Create button image on canvas
+                        btn_image = self.canvas.create_image(
+                            btn_x, btn_y,
+                            image=use_btn_photo,
+                            tags=("tools_modal", "use_button", f"use_btn_{i}")
+                        )
+                        
+                        # Store button info for click detection
+                        if not hasattr(self, 'tool_use_buttons'):
+                            self.tool_use_buttons = []
+                        self.tool_use_buttons.append({
+                            'tool_name': tool,
+                            'x1': btn_x - btn_width // 2 - int(20 * self.scale),
+                            'y1': btn_y - btn_height // 2 - int(20 * self.scale),
+                            'x2': btn_x + btn_width // 2 + int(20 * self.scale),
+                            'y2': btn_y + btn_height // 2 + int(20 * self.scale),
+                            'image_id': btn_image
+                        })
+                
+                y_offset += int(40 * self.scale)
         
-        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", 
-                             command=self._wrap_with_click_sound(popup.destroy))
-        close_btn.pack(pady=5)
+        # Handle modal close and button clicks
+        def on_canvas_click(event):
+            # Get canvas coordinates
+            canvas_x = event.x
+            canvas_y = event.y
+            
+            # Check if click is on a use button
+            if hasattr(self, 'tool_use_buttons'):
+                for btn_info in self.tool_use_buttons:
+                    if (canvas_x >= btn_info['x1'] and canvas_x <= btn_info['x2'] and
+                        canvas_y >= btn_info['y1'] and canvas_y <= btn_info['y2']):
+                        print(f"[DEBUG] Use button clicked for tool: {btn_info['tool_name']}")
+                        self._use_blood_potion_canvas(btn_info['tool_name'])
+                        return
+            
+            # Calculate close button area (top-right of the modal frame)
+            close_area_size = int(120 * self.scale)
+            frame_left = center_x - modal_width // 2
+            frame_top = center_y - modal_height // 2
+            frame_right = center_x + modal_width // 2
+            
+            # Check if click is in the close button area (top-right corner of frame)
+            if (canvas_x >= frame_right - close_area_size and 
+                canvas_x <= frame_right and
+                canvas_y >= frame_top and 
+                canvas_y <= frame_top + close_area_size):
+                print(f"[DEBUG] Tools close button clicked at canvas ({canvas_x}, {canvas_y})")
+                self._close_tools_modal()
+        
+        # Bind click event to canvas
+        self.canvas.bind("<Button-1>", on_canvas_click)
+    
+    def _close_tools_modal(self):
+        """Close the tools modal and restore game state."""
+        self._play_click_sound()
+        self.tools_modal_open = False
+        
+        # Clear tool use buttons info
+        if hasattr(self, 'tool_use_buttons'):
+            self.tool_use_buttons = []
+        
+        # Clear use button photos
+        if hasattr(self, 'use_btn_photos'):
+            self.use_btn_photos = []
+        
+        # Remove all tools modal elements from canvas
+        self.canvas.delete("tools_modal")
+        
+        # Unbind the click event
+        self.canvas.unbind("<Button-1>")
+    
+    def _use_blood_potion_canvas(self, tool_name):
+        """Use blood potion to restore stamina and mana (Canvas version)."""
+        self._play_click_sound()
+        state = self.manager.state
+        
+        # Add 5 to both stamina and mana
+        old_stamina = state.stamina
+        old_mana = state.mana
+        state.apply_change(stamina_delta=5, mana_delta=5)
+        
+        # Remove the potion from inventory
+        if tool_name in state.inventory:
+            state.inventory.remove(tool_name)
+        
+        # Update display
+        self._update_status_display()
+        
+        # Close the tools modal
+        self._close_tools_modal()
+        
+        # Calculate changes
+        stamina_change = state.stamina - old_stamina
+        mana_change = state.mana - old_mana
+        
+        # Show success modal
+        self._show_success_modal(stamina_change, mana_change)
+    
+    def _show_success_modal(self, stamina_change, mana_change):
+        """Show successfully used modal with language-specific background directly on canvas."""
+        # Set flag
+        self.success_modal_open = True
+        
+        # Calculate modal size based on scale (800x600 - same as tools/clues)
+        modal_width = int(800 * self.scale)
+        modal_height = int(600 * self.scale)
+        
+        # Calculate center position on main canvas
+        center_x = self.display_width // 2
+        center_y = self.display_height // 2
+        
+        # Draw semi-transparent overlay background (darken the game)
+        self.success_overlay = self.canvas.create_rectangle(
+            0, 0, self.display_width, self.display_height,
+            fill="black", stipple="gray50", tags="success_modal"
+        )
+        
+        # Select background based on current language
+        success_bg_pil = self.success_bg_cn_pil if self.current_language == "中文" else self.success_bg_en_pil
+        
+        # Load and display success background if available
+        if success_bg_pil:
+            try:
+                # Resize to fit modal size with scale
+                resized_success_bg = success_bg_pil.resize((modal_width, modal_height), Image.Resampling.LANCZOS)
+                self.success_bg_photo = ImageTk.PhotoImage(resized_success_bg)  # Store as instance variable
+                
+                # Draw the UI frame image at center
+                self.success_frame_image = self.canvas.create_image(
+                    center_x, center_y, 
+                    image=self.success_bg_photo,
+                    tags="success_modal"
+                )
+                bg_filename = "SuccessfullyUsedUIChinese.png" if self.current_language == "中文" else "SuccessfullyUsedUI.png"
+                print(f"[DEBUG] Success background {bg_filename} displayed on canvas at ({center_x}, {center_y}), size {modal_width}x{modal_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display success background: {e}")
+        else:
+            print(f"[WARNING] Success background not loaded for language: {self.current_language}")
+        
+        # Create text content on canvas (center-aligned)
+        text_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
+        
+        # Create success message
+        if self.current_language == "中文":
+            message = f"体力值 +{stamina_change}\n魔力值 +{mana_change}"
+        else:
+            message = f"Stamina +{stamina_change}\nMana +{mana_change}"
+        
+        # Position text in center (moved down from -50 to +30)
+        text_y = center_y + int(30 * self.scale)
+        
+        self.success_text_id = self.canvas.create_text(
+            center_x, text_y,
+            text=message,
+            fill="white",
+            font=text_font,
+            justify="center",
+            tags="success_modal"
+        )
+        
+        # Add close button at bottom
+        close_btn_pil = self.close_btn_cn_pil if self.current_language == "中文" else self.close_btn_en_pil
+        
+        if close_btn_pil:
+            try:
+                # Scale button to appropriate size (larger)
+                btn_scale = 1.2 * self.scale
+                btn_width = int(close_btn_pil.width * btn_scale)
+                btn_height = int(close_btn_pil.height * btn_scale)
+                
+                resized_close_btn = close_btn_pil.resize((btn_width, btn_height), Image.Resampling.LANCZOS)
+                self.success_close_btn_photo = ImageTk.PhotoImage(resized_close_btn)
+                
+                # Position button at bottom center
+                btn_y = center_y + modal_height // 2 - int(100 * self.scale)
+                
+                self.success_close_btn_image = self.canvas.create_image(
+                    center_x, btn_y,
+                    image=self.success_close_btn_photo,
+                    tags="success_modal"
+                )
+                
+                # Store button position for click detection
+                self.success_close_btn_info = {
+                    'x': center_x,
+                    'y': btn_y,
+                    'width': btn_width,
+                    'height': btn_height
+                }
+                
+                print(f"[DEBUG] Close button displayed at ({center_x}, {btn_y}), size {btn_width}x{btn_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display close button: {e}")
+        
+        # Handle modal close - click on close button
+        def on_canvas_click(event):
+            # Get canvas coordinates
+            canvas_x = event.x
+            canvas_y = event.y
+            
+            # Check if click is on close button
+            if hasattr(self, 'success_close_btn_info'):
+                btn_info = self.success_close_btn_info
+                btn_x1 = btn_info['x'] - btn_info['width'] // 2 - int(20 * self.scale)
+                btn_x2 = btn_info['x'] + btn_info['width'] // 2 + int(20 * self.scale)
+                btn_y1 = btn_info['y'] - btn_info['height'] // 2 - int(20 * self.scale)
+                btn_y2 = btn_info['y'] + btn_info['height'] // 2 + int(20 * self.scale)
+                
+                if (canvas_x >= btn_x1 and canvas_x <= btn_x2 and
+                    canvas_y >= btn_y1 and canvas_y <= btn_y2):
+                    print(f"[DEBUG] Success modal close button clicked at canvas ({canvas_x}, {canvas_y})")
+                    self._close_success_modal()
+        
+        # Bind click event to canvas
+        self.canvas.bind("<Button-1>", on_canvas_click)
+    
+    def _close_success_modal(self):
+        """Close the success modal and restore game state."""
+        self._play_click_sound()
+        self.success_modal_open = False
+        
+        # Clear button info
+        if hasattr(self, 'success_close_btn_info'):
+            delattr(self, 'success_close_btn_info')
+        
+        # Remove all success modal elements from canvas
+        self.canvas.delete("success_modal")
+        
+        # Unbind the click event
+        self.canvas.unbind("<Button-1>")
     
     def _use_blood_potion(self, tool_name, popup):
         """Use blood potion to restore stamina and mana."""
@@ -2011,32 +3072,103 @@ class GUIGameRunnerRedesigned:
         ok_btn.pack(pady=10)
     
     def show_clues(self):
-        """Show clues inventory."""
+        """Show clues inventory modal with language-specific background directly on canvas."""
+        # Set flag
+        self.clues_modal_open = True
+        
         state = self.manager.state
         # Use clues list as source
         clues = state.clues or []
-        clues_list = "\n".join(clues) if clues else ("无线索" if self.current_language == "中文" else "No clues")
+        clues_text = "\n".join(clues) if clues else ("无线索" if self.current_language == "中文" else "No clues")
         
-        popup = tk.Toplevel(self.window)
-        popup.title("线索" if self.current_language == "中文" else "Clues")
-        popup.geometry("400x300")
-        popup.configure(bg="white")
-        popup.transient(self.window)
+        # Calculate modal size based on scale (800x600 - larger size)
+        modal_width = int(800 * self.scale)
+        modal_height = int(600 * self.scale)
         
-        # Center the popup
-        popup.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (400 // 2)
-        y = (self.window.winfo_screenheight() // 2) - (300 // 2)
-        popup.geometry(f"400x300+{x}+{y}")
+        # Calculate center position on main canvas
+        center_x = self.display_width // 2
+        center_y = self.display_height // 2
         
-        text_widget = tk.Text(popup, width=40, height=15, font=tkfont.Font(family="微软雅黑", size=12))
-        text_widget.pack(padx=10, pady=10)
-        text_widget.insert("1.0", clues_list)
-        text_widget.config(state=tk.DISABLED)
+        # Draw semi-transparent overlay background (darken the game)
+        self.clues_overlay = self.canvas.create_rectangle(
+            0, 0, self.display_width, self.display_height,
+            fill="black", stipple="gray50", tags="clues_modal"
+        )
         
-        close_btn = tk.Button(popup, text="关闭" if self.current_language == "中文" else "Close", 
-                             command=self._wrap_with_click_sound(popup.destroy))
-        close_btn.pack(pady=5)
+        # Select background based on current language
+        clues_bg_pil = self.clues_bg_cn_pil if self.current_language == "中文" else self.clues_bg_en_pil
+        
+        # Load and display clues background if available
+        if clues_bg_pil:
+            try:
+                # Resize to fit modal size with scale
+                resized_clues_bg = clues_bg_pil.resize((modal_width, modal_height), Image.Resampling.LANCZOS)
+                self.clues_bg_photo = ImageTk.PhotoImage(resized_clues_bg)  # Store as instance variable
+                
+                # Draw the UI frame image at center
+                self.clues_frame_image = self.canvas.create_image(
+                    center_x, center_y, 
+                    image=self.clues_bg_photo,
+                    tags="clues_modal"
+                )
+                bg_filename = "CluesTextUIChinese.png" if self.current_language == "中文" else "CluesTextUI.png"
+                print(f"[DEBUG] Clues background {bg_filename} displayed on canvas at ({center_x}, {center_y}), size {modal_width}x{modal_height}")
+            except Exception as e:
+                print(f"[ERROR] Failed to display clues background: {e}")
+        else:
+            print(f"[WARNING] Clues background not loaded for language: {self.current_language}")
+        
+        # Create text content on canvas (left-aligned)
+        text_font = tkfont.Font(family="微软雅黑", size=int(16 * self.scale))
+        max_width = int(650 * self.scale)
+        
+        # Position text on the left side of the modal
+        text_x = center_x - modal_width // 2 + int(50 * self.scale)
+        text_y = center_y - modal_height // 2 + int(120 * self.scale)
+        
+        self.clues_text_id = self.canvas.create_text(
+            text_x, text_y,
+            text=clues_text,
+            fill="white",
+            font=text_font,
+            width=max_width,
+            anchor="nw",
+            tags="clues_modal"
+        )
+        
+        # Handle modal close - click on top-right corner area (close button area)
+        def on_canvas_click(event):
+            # Get canvas coordinates
+            canvas_x = event.x
+            canvas_y = event.y
+            
+            # Calculate close button area (top-right of the modal frame)
+            close_area_size = int(120 * self.scale)
+            frame_left = center_x - modal_width // 2
+            frame_top = center_y - modal_height // 2
+            frame_right = center_x + modal_width // 2
+            
+            # Check if click is in the close button area (top-right corner of frame)
+            if (canvas_x >= frame_right - close_area_size and 
+                canvas_x <= frame_right and
+                canvas_y >= frame_top and 
+                canvas_y <= frame_top + close_area_size):
+                print(f"[DEBUG] Clues close button clicked at canvas ({canvas_x}, {canvas_y})")
+                self._close_clues_modal()
+        
+        # Bind click event to canvas
+        self.canvas.bind("<Button-1>", on_canvas_click)
+    
+    def _close_clues_modal(self):
+        """Close the clues modal and restore game state."""
+        self._play_click_sound()
+        self.clues_modal_open = False
+        
+        # Remove all clues modal elements from canvas
+        self.canvas.delete("clues_modal")
+        
+        # Unbind the click event
+        self.canvas.unbind("<Button-1>")
     
     def show_recall(self):
         """Show recall/history."""
@@ -2057,6 +3189,58 @@ class GUIGameRunnerRedesigned:
         """Toggle between Chinese and English."""
         new_lang = "English" if self.current_language == "中文" else "中文"
         self.current_language = new_lang
+        
+        # Translate inventory items and clues
+        if hasattr(self, 'manager') and hasattr(self.manager, 'state'):
+            state = self.manager.state
+            
+            # Translate inventory
+            if state.inventory:
+                translated_inventory = []
+                for item in state.inventory:
+                    # Translate blood potion
+                    if "血息药剂" in item:
+                        if new_lang == "English":
+                            translated_inventory.append("Blood Potion (replenishes strength and magic)")
+                        else:
+                            translated_inventory.append(item)
+                    elif "Blood Potion" in item:
+                        if new_lang == "中文":
+                            translated_inventory.append("血息药剂（可补充体力和魔力）")
+                        else:
+                            translated_inventory.append(item)
+                    else:
+                        translated_inventory.append(item)
+                state.inventory = translated_inventory
+            
+            # Translate clues
+            if state.clues:
+                translated_clues = []
+                for clue in state.clues:
+                    # Translate common clues
+                    if "狱卒需要止痛膏" in clue:
+                        if new_lang == "English":
+                            translated_clues.append("the jailer needs pain relief ointment (bribe line advance)")
+                        else:
+                            translated_clues.append(clue)
+                    elif "jailer needs pain" in clue:
+                        if new_lang == "中文":
+                            translated_clues.append("狱卒需要止痛膏（贿赂线推进）")
+                        else:
+                            translated_clues.append(clue)
+                    elif "空心石壁" in clue:
+                        if new_lang == "English":
+                            translated_clues.append("Hollow Rock Wall (Damage Line Advance)")
+                        else:
+                            translated_clues.append(clue)
+                    elif "Hollow Rock Wall" in clue:
+                        if new_lang == "中文":
+                            translated_clues.append("空心石壁（破坏线推进）")
+                        else:
+                            translated_clues.append(clue)
+                    else:
+                        translated_clues.append(clue)
+                state.clues = translated_clues
         
         # Check if story modal is open
         story_was_open = self.story_modal_open
@@ -2188,7 +3372,7 @@ class GUIGameRunnerRedesigned:
                 
                 if transition_text:
                     # Reload Day 56 background (transition uses special background)
-                    day56_path = "Day 56.PNG"
+                    day56_path = "UI/Day 56.PNG"
                     if os.path.exists(day56_path):
                         print(f"[DEBUG] Language switch: Loading Day 56 background")
                         background_image = Image.open(day56_path)
@@ -2212,8 +3396,25 @@ class GUIGameRunnerRedesigned:
                             self.canvas.delete("all")
                             self.canvas.create_image(0, 0, image=self.bg_photo, anchor='nw')
                             
+                            # Load DayBar at the top
+                            day_bar_path = "UI/DayBar.png"
+                            if os.path.exists(day_bar_path):
+                                day_bar = Image.open(day_bar_path)
+                                original_width = day_bar.width
+                                original_height = day_bar.height
+                                
+                                # DayBar宽度拉伸到显示宽度,高度按比例缩放
+                                bar_width = self.display_width
+                                bar_height = int(original_height * self.scale)
+                                
+                                day_bar = day_bar.resize((bar_width, bar_height), Image.Resampling.LANCZOS)
+                                self.day_bar_photo = ImageTk.PhotoImage(day_bar)
+                                x = self.display_width // 2
+                                y = bar_height // 2
+                                self.canvas.create_image(x, y, image=self.day_bar_photo, tags="daybar")
+                            
                             # Load DialogBox (needed for text display)
-                            dialog_box_path = "DialogBox.png"
+                            dialog_box_path = "UI/DialogBox.png"
                             if os.path.exists(dialog_box_path):
                                 dialog_box = Image.open(dialog_box_path)
                                 original_width = dialog_box.width
